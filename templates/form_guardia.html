@@ -23,7 +23,7 @@
             <select name="profesor_ausente_id" class="form-select" required>
               <option value="">Selecciona el profesor ausente...</option>
               {% for p in profesores %}
-              <option value="{{ p.id }}">{{ p.nombre }}{% if p.especialidad %} — {{ p.especialidad }}{% endif %}</option>
+              <option value="{{ p.id }}">{{ p.nombre }}{% if p.etapa %} — {{ p.etapa }}{% endif %}</option>
               {% endfor %}
             </select>
           </div>

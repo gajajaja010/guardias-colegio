@@ -23,7 +23,7 @@
             <tr class="{% if p.de_baja %}table-warning{% endif %}">
               <td>
                 <div>{{ p.nombre }}</div>
-                <small class="text-muted">{{ p.especialidad or '' }}{% if p.aula_tutoria %} · Tutor {{ p.aula_tutoria }}{% endif %}</small>
+                <small class="text-muted">{% if p.aula_tutoria %}Tutor {{ p.aula_tutoria }}{% endif %}</small>
                 {% if p.de_baja %}<span class="badge bg-warning text-dark ms-1">Baja</span>{% endif %}
                 {% if p.es_especialista %}<span class="badge bg-info ms-1">Esp.</span>{% endif %}
               </td>
