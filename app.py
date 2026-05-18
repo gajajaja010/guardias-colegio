@@ -1080,20 +1080,22 @@ def cambiar_modo():
 # ───────────────────────────── INIT DB ─────────────────────────────
 
 def init_db():
-    with app.app_context():
-        db.create_all()
-        if not Profesor.query.filter_by(es_admin=True).first():
-            admin = Profesor(
-                nombre='Administrador',
-                email='admin@colegio.es',
-                es_admin=True,
-                password_hash=hash_password('admin123')
-            )
-            db.session.add(admin)
-            db.session.commit()
-            print('Admin creado: admin@colegio.es / admin123')
+    db.create_all()
+    if not Profesor.query.filter_by(es_admin=True).first():
+        admin = Profesor(
+            nombre='Administrador',
+            email='admin@colegio.es',
+            es_admin=True,
+            password_hash=hash_password('admin123')
+        )
+        db.session.add(admin)
+        db.session.commit()
+        print('Admin creado: admin@colegio.es / admin123')
 
+
+# Se ejecuta tanto con gunicorn como con python app.py
+with app.app_context():
+    init_db()
 
 if __name__ == '__main__':
-    init_db()
     app.run(debug=True, port=5000)
