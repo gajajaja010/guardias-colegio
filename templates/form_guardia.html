@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}Nueva guardia{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('guardias') }}" class="text-decoration-none text-muted">
+    <i class="bi bi-arrow-left me-1"></i>Volver a guardias
+  </a>
+</div>
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-plus-circle me-2 text-primary"></i>Registrar nueva guardia</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info small">
+          <i class="bi bi-robot me-2"></i>
+          El sistema buscará automáticamente al profesor más adecuado y le enviará un email.
+        </div>
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label">Profesor ausente <span class="text-danger">*</span></label>
+            <select name="profesor_ausente_id" class="form-select" required>
+              <option value="">Selecciona el profesor ausente...</option>
+              {% for p in profesores %}
+              <option value="{{ p.id }}">{{ p.nombre }}{% if p.especialidad %} — {{ p.especialidad }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Fecha <span class="text-danger">*</span></label>
+              <input type="date" name="fecha" class="form-control" required id="inputFecha">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Franja horaria <span class="text-danger">*</span></label>
+              <select name="franja" class="form-select" required>
+                <option value="">Selecciona la franja...</option>
+                {% for f in franjas %}
+                <option value="{{ f }}">{{ f }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Aula</label>
+            <input type="text" name="aula" class="form-control" placeholder="Ej: 2ºA, Sala informática...">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Motivo de la ausencia</label>
+            <input type="text" name="motivo_ausencia" class="form-control" placeholder="Enfermedad, reunión externa...">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Notas para el profesor que cubre</label>
+            <textarea name="notas" class="form-control" rows="2" placeholder="Instrucciones especiales, tarea pendiente..."></textarea>
+          </div>
+          <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+            <a href="{{ url_for('guardias') }}" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-robot me-2"></i>Asignar automáticamente
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('inputFecha').value = new Date().toISOString().split('T')[0];
+</script>
+{% endblock %}

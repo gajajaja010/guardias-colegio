@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if profesor else 'Nuevo' }} profesor{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('profesores') }}" class="text-decoration-none text-muted">
+    <i class="bi bi-arrow-left me-1"></i>Volver a profesores
+  </a>
+</div>
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0">{{ 'Editar profesor' if profesor else 'Añadir nuevo profesor' }}</h5>
+      </div>
+      <div class="card-body">
+        {% if not profesor %}
+        <div class="alert alert-info small">
+          <i class="bi bi-envelope me-2"></i>
+          Al guardar, si el email está configurado se enviará una invitación automáticamente.
+          Si no, podrás copiar el enlace de invitación desde la lista de profesores.
+        </div>
+        {% endif %}
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label">Nombre completo <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control"
+              value="{{ profesor.nombre if profesor else '' }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email <span class="text-danger">*</span></label>
+            <input type="email" name="email" class="form-control"
+              value="{{ profesor.email if profesor else '' }}"
+              placeholder="nombre@laasunciondonostia.com"
+              {{ 'readonly' if profesor else 'required' }}>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Etapa educativa</label>
+              <select name="etapa" class="form-select">
+                <option value="">Sin especificar</option>
+                {% set etapas = ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
+                {% for e in etapas %}
+                <option value="{{ e }}" {{ 'selected' if profesor and profesor.etapa == e }}>{{ e }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Aula de tutoría</label>
+              <input type="text" name="aula_tutoria" class="form-control"
+                value="{{ profesor.aula_tutoria if profesor else '' }}"
+                placeholder="Ej: 3ºA, 1ºB...">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Clases donde <strong>no</strong> puede hacer guardia</label>
+            <input type="text" name="aulas_bloqueadas_raw" class="form-control"
+              value="{{ profesor.aulas_bloqueadas | from_json | join(', ') if profesor else '' }}"
+              placeholder="Ej: 2ºA, 3ºB (separadas por comas)">
+            <div class="form-text">El sistema nunca le asignará guardias en estas clases.</div>
+          </div>
+
+          {% if profesor %}
+          <div class="mb-3">
+            <label class="form-label">Nueva contraseña <span class="text-muted small">(dejar vacío para no cambiar)</span></label>
+            <input type="password" name="password" class="form-control">
+          </div>
+          {% endif %}
+
+          {% if current_user.es_admin %}
+          <div class="mb-3">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="es_especialista" id="especialista"
+                {{ 'checked' if profesor and profesor.es_especialista }}>
+              <label class="form-check-label" for="especialista">
+                Especialista — entra en el sistema solo si no hay nadie del pool normal disponible
+              </label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="es_admin" id="esAdmin"
+                {{ 'checked' if profesor and profesor.es_admin }}>
+              <label class="form-check-label" for="esAdmin">Administrador</label>
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+            <a href="{{ url_for('profesores') }}" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>{{ 'Guardar cambios' if profesor else 'Añadir profesor' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

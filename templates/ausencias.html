@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block title %}Ausencias{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="fw-bold mb-0"><i class="bi bi-person-x me-2 text-warning"></i>Ausencias</h3>
+  <a href="{{ url_for('nueva_ausencia') }}" class="btn btn-warning">
+    <i class="bi bi-plus-circle me-2"></i>Reportar ausencia
+  </a>
+</div>
+
+{% set pendientes = ausencias | selectattr('aprobada', 'equalto', false) | list %}
+{% if pendientes and current_user.es_admin %}
+<div class="card border-warning mb-4">
+  <div class="card-header bg-warning text-dark fw-semibold">
+    <i class="bi bi-hourglass-split me-2"></i>Ausencias pendientes de aprobación ({{ pendientes|length }})
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>Profesor</th><th>Fecha</th><th>Motivo</th><th>Franjas afectadas</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in pendientes %}
+        <tr>
+          <td><strong>{{ a.profesor.nombre }}</strong></td>
+          <td>{{ a.fecha_inicio.strftime('%d/%m/%Y') }}</td>
+          <td>{{ a.motivo or '—' }}</td>
+          <td>
+            {% if a.franjas_afectadas == 'todas' %}
+              <span class="badge bg-secondary">Todo el día</span>
+            {% else %}
+              {% for f in a.franjas_afectadas | from_json %}
+                <span class="badge bg-secondary me-1">{{ f }}</span>
+              {% endfor %}
+            {% endif %}
+          </td>
+          <td>
+            <form method="POST" action="{{ url_for('aprobar_ausencia', id=a.id) }}" class="d-inline">
+              <button class="btn btn-sm btn-success">
+                <i class="bi bi-check-lg me-1"></i>Aprobar y asignar guardia
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header bg-white fw-semibold">Historial de ausencias</div>
+  <div class="card-body p-0">
+    {% if ausencias %}
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Profesor</th>
+          <th>Fecha</th>
+          <th>Motivo</th>
+          <th>Franjas</th>
+          <th>Tipo</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in ausencias %}
+        <tr>
+          <td><strong>{{ a.profesor.nombre }}</strong></td>
+          <td>{{ a.fecha_inicio.strftime('%d/%m/%Y') }}</td>
+          <td>{{ a.motivo or '—' }}</td>
+          <td>
+            {% if a.franjas_afectadas == 'todas' %}
+              <small class="text-muted">Todo el día</small>
+            {% else %}
+              {% for f in a.franjas_afectadas | from_json %}
+                <span class="badge bg-light text-dark border me-1">{{ f }}</span>
+              {% endfor %}
+            {% endif %}
+          </td>
+          <td>
+            {% if a.es_baja %}
+              <span class="badge bg-danger">Baja médica</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Ausencia</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if a.aprobada %}
+              <span class="badge bg-success">Aprobada</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pendiente</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-check-circle fs-2 text-success"></i>
+      <p class="mt-2">No hay ausencias registradas</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

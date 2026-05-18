@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; background: #f4f4f4; margin:0; padding:20px;">
+  <div style="max-width:520px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.1);">
+    <div style="background:#856404; padding:24px 32px;">
+      <h2 style="color:#fff; margin:0; font-size:1.3rem;">⏳ Ausencia pendiente de aprobación</h2>
+      <p style="color:#ffe69c; margin:4px 0 0;">Colegio La Asunción — Donostia</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="color:#333;">Hola <strong>{{ admin.nombre.split()[0] }}</strong>,</p>
+      <p style="color:#555;"><strong>{{ profesor.nombre }}</strong> ha reportado una ausencia que requiere tu aprobación para asignar la guardia:</p>
+
+      <div style="background:#f0f4f8; border-radius:8px; padding:20px; margin:20px 0;">
+        <table style="width:100%; border-collapse:collapse;">
+          <tr>
+            <td style="padding:6px 0; color:#666; width:40%;">👤 Profesor</td>
+            <td style="padding:6px 0; font-weight:bold;">{{ profesor.nombre }}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0; color:#666;">📅 Fecha</td>
+            <td style="padding:6px 0; font-weight:bold;">{{ ausencia.fecha_inicio.strftime('%A, %d de %B de %Y') }}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0; color:#666;">📝 Motivo</td>
+            <td style="padding:6px 0;">{{ ausencia.motivo or '—' }}</td>
+          </tr>
+          {% if ausencia.notas %}
+          <tr>
+            <td style="padding:6px 0; color:#666; vertical-align:top;">💬 Notas</td>
+            <td style="padding:6px 0;">{{ ausencia.notas }}</td>
+          </tr>
+          {% endif %}
+        </table>
+      </div>
+
+      <div style="text-align:center; margin:24px 0;">
+        <a href="{{ url }}"
+          style="background:#198754; color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:bold; display:inline-block;">
+          ✅ Aprobar y asignar guardia
+        </a>
+      </div>
+
+      <p style="color:#888; font-size:.85rem;">O entra en la aplicación y apruébala desde el apartado <strong>Ausencias</strong>.</p>
+    </div>
+    <div style="background:#f0f4f8; padding:16px 32px; text-align:center;">
+      <p style="color:#aaa; font-size:.8rem; margin:0;">Sistema de guardias — Colegio La Asunción Donostia</p>
+    </div>
+  </div>
+</body>
+</html>

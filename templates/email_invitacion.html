@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; background: #f4f4f4; margin:0; padding:20px;">
+  <div style="max-width:520px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.1);">
+    <div style="background:#1e3a5f; padding:24px 32px;">
+      <h2 style="color:#fff; margin:0; font-size:1.3rem;">👋 Bienvenido/a al sistema de guardias</h2>
+      <p style="color:#a8c4e0; margin:4px 0 0;">Colegio La Asunción — Donostia</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="font-size:1rem; color:#333;">Hola <strong>{{ profesor.nombre.split()[0] }}</strong>,</p>
+      <p style="color:#555;">Se ha creado tu cuenta en el sistema de gestión de guardias del colegio. Para activarla y crear tu contraseña, haz clic en el botón de abajo:</p>
+
+      <div style="text-align:center; margin:32px 0;">
+        <a href="{{ url }}"
+          style="background:#1e3a5f; color:#fff; padding:14px 32px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:1rem; display:inline-block;">
+          ✅ Crear mi contraseña
+        </a>
+      </div>
+
+      <p style="color:#888; font-size:.85rem;">Este enlace es válido durante <strong>48 horas</strong>. Si no lo usas a tiempo, pide al administrador que te reenvíe la invitación.</p>
+      <p style="color:#888; font-size:.85rem;">Si no esperabas este correo, ignóralo.</p>
+    </div>
+    <div style="background:#f0f4f8; padding:16px 32px; text-align:center;">
+      <p style="color:#aaa; font-size:.8rem; margin:0;">Sistema de guardias — Colegio La Asunción Donostia</p>
+    </div>
+  </div>
+</body>
+</html>

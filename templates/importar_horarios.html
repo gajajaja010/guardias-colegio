@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}Importar horarios{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-muted">
+    <i class="bi bi-arrow-left me-1"></i>Volver al inicio
+  </a>
+</div>
+<h3 class="fw-bold mb-4"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Importar horarios desde Excel</h3>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-upload me-2 text-primary"></i>Subir fichero
+      </div>
+      <div class="card-body">
+        <div class="alert alert-warning small">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          Al importar se <strong>sobreescriben</strong> los horarios existentes de los profesores incluidos en el fichero.
+        </div>
+        <form method="POST" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label">Fichero Excel (.xlsx)</label>
+            <input type="file" name="archivo" class="form-control" accept=".xlsx,.xls" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-upload me-2"></i>Importar horarios
+          </button>
+        </form>
+        <hr>
+        <a href="{{ url_for('descargar_plantilla') }}" class="btn btn-outline-success w-100">
+          <i class="bi bi-download me-2"></i>Descargar plantilla Excel
+        </a>
+        <div class="form-text text-center mt-1">Descarga la plantilla, rellénala y súbela aquí</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-info-circle me-2"></i>Formato del fichero
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-3">El fichero Excel debe tener estas columnas en la primera fila:</p>
+        <table class="table table-sm table-bordered small">
+          <thead class="table-light">
+            <tr><th>Columna</th><th>Ejemplo</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Profesor</strong></td><td>García López, María</td></tr>
+            <tr><td><strong>Dia</strong></td><td>Lunes / Martes / Miércoles...</td></tr>
+            <tr><td><strong>Franja</strong></td><td>1ª hora / 2ª hora / Recreo...</td></tr>
+            <tr><td><strong>Tipo</strong></td><td>clase / libre / reunion</td></tr>
+            <tr><td><strong>Asignatura</strong></td><td>Matemáticas <span class="text-muted">(opcional)</span></td></tr>
+          </tbody>
+        </table>
+
+        <p class="small fw-semibold mt-3 mb-1">Valores válidos para "Tipo":</p>
+        <ul class="small mb-0">
+          <li><span class="badge bg-danger">clase</span> — tiene clase, no puede hacer guardia</li>
+          <li><span class="badge bg-success">libre</span> — franja libre, disponible para guardia</li>
+          <li><span class="badge bg-warning text-dark">reunion</span> — ocupado, no puede hacer guardia</li>
+        </ul>
+
+        <p class="small fw-semibold mt-3 mb-1">Franjas disponibles:</p>
+        <div class="d-flex flex-wrap gap-1">
+          {% for f in franjas %}
+          <span class="badge bg-secondary">{{ f }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-people me-2"></i>Profesores registrados
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for p in profesores %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <span class="small">{{ p.nombre }}</span>
+            {% set clases = p.horario | selectattr('tiene_clase') | list | length %}
+            <span class="badge bg-secondary">{{ clases }} clases</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

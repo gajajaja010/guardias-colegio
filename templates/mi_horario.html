@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% block title %}Mi horario{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="fw-bold mb-0"><i class="bi bi-table me-2 text-primary"></i>Mi horario semanal</h3>
+  <button class="btn btn-primary" onclick="guardarHorario()">
+    <i class="bi bi-save me-2"></i>Guardar cambios
+  </button>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex gap-3 flex-wrap align-items-center">
+      <span><span class="badge bg-danger me-1">&nbsp;</span> Tengo clase</span>
+      <span><span class="badge bg-warning text-dark me-1">&nbsp;</span> No disponible (reunión, etc.)</span>
+      <span><span class="badge bg-success me-1">&nbsp;</span> Libre (puedo hacer guardia)</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0 overflow-auto">
+    <table class="table table-bordered mb-0" id="tablaHorario">
+      <thead class="table-light">
+        <tr>
+          <th style="width:130px">Franja</th>
+          {% for dia in dias %}<th class="text-center">{{ dia }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for franja in franjas %}
+        <tr>
+          <td class="fw-semibold small align-middle">{{ franja }}</td>
+          {% for dia in dias %}
+          {% set celda = horario[dia][franja] %}
+          <td class="text-center p-1" style="min-width:120px;">
+            <div class="celda p-2 rounded"
+              id="celda_{{ dia }}_{{ franja }}"
+              data-dia="{{ dia }}"
+              data-franja="{{ franja }}"
+              data-clase="{{ 'true' if celda.tiene_clase else 'false' }}"
+              data-ind="{{ 'true' if celda.indisponible else 'false' }}"
+              data-asignatura="{{ celda.asignatura }}"
+              data-motivo="{{ celda.motivo_ind }}"
+              style="cursor:pointer; background: {{ '#ffcccc' if celda.tiene_clase else ('#fff3cd' if celda.indisponible else '#d1e7dd') }};"
+              onclick="editarCelda(this)">
+              {% if celda.tiene_clase %}
+                <small class="fw-semibold text-danger">📚 {{ celda.asignatura or 'Clase' }}</small>
+              {% elif celda.indisponible %}
+                <small class="fw-semibold text-warning">⛔ {{ celda.motivo_ind or 'No disponible' }}</small>
+              {% else %}
+                <small class="text-success">✓ Libre</small>
+              {% endif %}
+            </div>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal editar celda -->
+<div class="modal fade" id="modalCelda" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title" id="modalCeldaTitulo">Editar franja</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="celdaDia">
+        <input type="hidden" id="celdaFranja">
+        <div class="d-grid gap-2">
+          <button class="btn btn-danger btn-sm" onclick="setCelda('clase')">📚 Tengo clase</button>
+          <div id="divAsignatura" class="mt-1" style="display:none">
+            <input type="text" id="inputAsignatura" class="form-control form-control-sm" placeholder="Asignatura (opcional)">
+          </div>
+          <button class="btn btn-warning btn-sm" onclick="setCelda('ind')">⛔ No disponible</button>
+          <div id="divMotivo" class="mt-1" style="display:none">
+            <input type="text" id="inputMotivo" class="form-control form-control-sm" placeholder="Motivo (reunión, tutoría...)">
+          </div>
+          <button class="btn btn-success btn-sm" onclick="setCelda('libre')">✓ Libre</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-sm" onclick="confirmarCelda()">Aplicar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-info mt-3">
+  <i class="bi bi-info-circle me-2"></i>
+  Este horario es <strong>semanal y recurrente</strong>. Si tienes un evento puntual que no se repite cada semana,
+  márcalo igualmente y luego elimínalo cuando pase.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let celdaActual = null;
+let estadoSeleccionado = null;
+
+function editarCelda(el) {
+  celdaActual = el;
+  document.getElementById('celdaDia').value = el.dataset.dia;
+  document.getElementById('celdaFranja').value = el.dataset.franja;
+  document.getElementById('modalCeldaTitulo').textContent = el.dataset.dia + ' — ' + el.dataset.franja;
+  document.getElementById('inputAsignatura').value = el.dataset.asignatura || '';
+  document.getElementById('inputMotivo').value = el.dataset.motivo || '';
+  document.getElementById('divAsignatura').style.display = 'none';
+  document.getElementById('divMotivo').style.display = 'none';
+  estadoSeleccionado = null;
+  new bootstrap.Modal(document.getElementById('modalCelda')).show();
+}
+
+function setCelda(tipo) {
+  estadoSeleccionado = tipo;
+  document.getElementById('divAsignatura').style.display = tipo === 'clase' ? 'block' : 'none';
+  document.getElementById('divMotivo').style.display = tipo === 'ind' ? 'block' : 'none';
+}
+
+function confirmarCelda() {
+  if (!estadoSeleccionado || !celdaActual) return;
+  const asignatura = document.getElementById('inputAsignatura').value.trim();
+  const motivo = document.getElementById('inputMotivo').value.trim();
+
+  celdaActual.dataset.clase = estadoSeleccionado === 'clase' ? 'true' : 'false';
+  celdaActual.dataset.ind = estadoSeleccionado === 'ind' ? 'true' : 'false';
+  celdaActual.dataset.asignatura = asignatura;
+  celdaActual.dataset.motivo = motivo;
+
+  if (estadoSeleccionado === 'clase') {
+    celdaActual.style.background = '#ffcccc';
+    celdaActual.innerHTML = `<small class="fw-semibold text-danger">📚 ${asignatura || 'Clase'}</small>`;
+  } else if (estadoSeleccionado === 'ind') {
+    celdaActual.style.background = '#fff3cd';
+    celdaActual.innerHTML = `<small class="fw-semibold text-warning">⛔ ${motivo || 'No disponible'}</small>`;
+  } else {
+    celdaActual.style.background = '#d1e7dd';
+    celdaActual.innerHTML = `<small class="text-success">✓ Libre</small>`;
+  }
+  bootstrap.Modal.getInstance(document.getElementById('modalCelda')).hide();
+}
+
+function guardarHorario() {
+  const celdas = document.querySelectorAll('.celda');
+  const data = {};
+  celdas.forEach(c => {
+    const key = c.dataset.dia + '_' + c.dataset.franja;
+    data[key] = {
+      tiene_clase: c.dataset.clase === 'true',
+      asignatura: c.dataset.asignatura || '',
+      indisponible: c.dataset.ind === 'true',
+      motivo_ind: c.dataset.motivo || ''
+    };
+  });
+  fetch('/mi-horario/guardar', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(r => r.json()).then(r => {
+    if (r.ok) {
+      const alert = document.createElement('div');
+      alert.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 end-0 m-3';
+      alert.innerHTML = '<i class="bi bi-check-circle me-2"></i>Horario guardado correctamente. <button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+      document.body.appendChild(alert);
+      setTimeout(() => alert.remove(), 3000);
+    }
+  });
+}
+</script>
+{% endblock %}

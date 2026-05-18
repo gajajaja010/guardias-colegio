@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; background: #f4f4f4; margin:0; padding:20px;">
+  <div style="max-width:520px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.1);">
+    <div style="background:#1e3a5f; padding:24px 32px;">
+      <h2 style="color:#fff; margin:0; font-size:1.3rem;">📋 Guardia asignada</h2>
+      <p style="color:#a8c4e0; margin:4px 0 0;">Colegio La Asunción — Donostia</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="font-size:1rem; color:#333;">Hola <strong>{{ profesor.nombre.split()[0] }}</strong>,</p>
+      <p style="color:#555;">Se te ha asignado una guardia para cubrir la ausencia de <strong>{{ ausente.nombre }}</strong>:</p>
+
+      <div style="background:#f0f4f8; border-radius:8px; padding:20px; margin:20px 0;">
+        <table style="width:100%; border-collapse:collapse;">
+          <tr>
+            <td style="padding:6px 0; color:#666; width:40%;">📅 Fecha</td>
+            <td style="padding:6px 0; font-weight:bold;">{{ guardia.fecha.strftime('%A, %d de %B de %Y') }}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0; color:#666;">🕐 Franja</td>
+            <td style="padding:6px 0; font-weight:bold;">{{ guardia.franja }}</td>
+          </tr>
+          {% if guardia.aula %}
+          <tr>
+            <td style="padding:6px 0; color:#666;">🚪 Aula</td>
+            <td style="padding:6px 0; font-weight:bold;">{{ guardia.aula }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <td style="padding:6px 0; color:#666;">👤 Cubre a</td>
+            <td style="padding:6px 0; font-weight:bold;">{{ ausente.nombre }}</td>
+          </tr>
+          {% if guardia.motivo_ausencia %}
+          <tr>
+            <td style="padding:6px 0; color:#666;">📝 Motivo</td>
+            <td style="padding:6px 0;">{{ guardia.motivo_ausencia }}</td>
+          </tr>
+          {% endif %}
+          {% if guardia.notas %}
+          <tr>
+            <td style="padding:6px 0; color:#666; vertical-align:top;">💬 Notas</td>
+            <td style="padding:6px 0;">{{ guardia.notas }}</td>
+          </tr>
+          {% endif %}
+        </table>
+      </div>
+
+      <p style="color:#555; margin-bottom:24px;">Por favor, confirma si puedes realizar esta guardia:</p>
+
+      <div style="text-align:center; margin:24px 0;">
+        <a href="{{ url_confirmar }}"
+          style="background:#198754; color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:bold; margin-right:12px; display:inline-block;">
+          ✅ Sí, puedo
+        </a>
+        <a href="{{ url_rechazar }}"
+          style="background:#dc3545; color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:bold; display:inline-block;">
+          ❌ No puedo
+        </a>
+      </div>
+
+      <p style="color:#888; font-size:.85rem; margin-top:24px;">
+        Si rechazas la guardia, el sistema buscará automáticamente otro profesor disponible.
+        Este enlace es válido durante 24 horas.
+      </p>
+    </div>
+    <div style="background:#f0f4f8; padding:16px 32px; text-align:center;">
+      <p style="color:#aaa; font-size:.8rem; margin:0;">Sistema de guardias — Colegio La Asunción Donostia</p>
+    </div>
+  </div>
+</body>
+</html>

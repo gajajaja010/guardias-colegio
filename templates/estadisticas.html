@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Estadísticas{% endblock %}
+{% block content %}
+<h3 class="fw-bold mb-4"><i class="bi bi-bar-chart me-2 text-primary"></i>Estadísticas</h3>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-7">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Guardias por profesor (acumulado)</div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Profesor</th>
+              <th>Etapa</th>
+              <th class="text-center">Esta semana</th>
+              <th class="text-center">Total</th>
+              <th>Carga relativa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in profesores %}
+            <tr class="{% if p.de_baja %}table-warning{% endif %}">
+              <td>
+                <div>{{ p.nombre }}</div>
+                <small class="text-muted">{{ p.especialidad or '' }}{% if p.aula_tutoria %} · Tutor {{ p.aula_tutoria }}{% endif %}</small>
+                {% if p.de_baja %}<span class="badge bg-warning text-dark ms-1">Baja</span>{% endif %}
+                {% if p.es_especialista %}<span class="badge bg-info ms-1">Esp.</span>{% endif %}
+              </td>
+              <td class="text-muted small">{{ p.etapa or '—' }}</td>
+              <td class="text-center"><span class="badge bg-primary">{{ p.guardias_semana() }}</span></td>
+              <td class="text-center"><strong>{{ p.total_guardias }}</strong></td>
+              <td style="min-width:150px">
+                {% set pct = [p.porcentaje_guardias, 100]|min %}
+                <div class="progress" style="height:8px;">
+                  <div class="progress-bar
+                    {% if pct < 80 %}bg-success
+                    {% elif pct < 120 %}bg-warning
+                    {% else %}bg-danger{% endif %}"
+                    style="width:{{ pct }}%"></div>
+                </div>
+                <small class="text-muted">{{ p.porcentaje_guardias }}% de la media</small>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-5">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold">Guardias por mes ({{ guardias_por_mes[0].mes | default('—') }} – ahora)</div>
+      <div class="card-body">
+        {% set meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'] %}
+        {% set max_val = guardias_por_mes | map(attribute='total') | max | default(1) %}
+        {% for item in guardias_por_mes %}
+        <div class="d-flex align-items-center mb-2">
+          <div style="width:35px" class="text-muted small">{{ meses[item.mes - 1] }}</div>
+          <div class="progress flex-grow-1 me-2" style="height:20px;">
+            <div class="progress-bar bg-primary"
+              style="width:{{ ((item.total / max_val) * 100) if max_val > 0 else 0 }}%">
+            </div>
+          </div>
+          <div style="width:25px" class="text-end small fw-semibold">{{ item.total }}</div>
+        </div>
+        {% endfor %}
+        {% if not guardias_por_mes %}
+        <p class="text-muted text-center">Sin datos aún</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Guardias{% endblock %} — Colegio</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+  body { background: #f0f4f8; }
+  .sidebar { min-height: 100vh; background: #1e3a5f; }
+  .sidebar .nav-link { color: #a8c4e0; padding: .6rem 1.2rem; border-radius: 8px; margin: 2px 8px; }
+  .sidebar .nav-link:hover, .sidebar .nav-link.active { background: #2d5f8a; color: #fff; }
+  .sidebar .nav-link i { width: 22px; }
+  .sidebar-brand { color: #fff; font-size: 1.1rem; font-weight: 700; padding: 1.5rem 1.2rem 1rem; display: block; }
+  .card { border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .card-header { border-radius: 12px 12px 0 0 !important; font-weight: 600; }
+  .badge-pendiente { background: #ffc107; color: #000; }
+  .badge-confirmada { background: #198754; }
+  .badge-rechazada { background: #dc3545; }
+  .badge-sin_cobertura { background: #6c757d; }
+  .badge-completada { background: #0d6efd; }
+</style>
+</head>
+<body>
+<div class="container-fluid p-0">
+  <div class="row g-0">
+    <div class="col-auto sidebar d-flex flex-column" style="width:220px; min-width:220px;">
+      <a class="sidebar-brand" href="{{ url_for('dashboard') }}">
+        <i class="bi bi-shield-check me-2"></i>Guardias
+      </a>
+      <nav class="nav flex-column flex-grow-1">
+        <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+          <i class="bi bi-house"></i> Inicio
+        </a>
+        <a class="nav-link {% if request.endpoint in ['guardias','nueva_guardia'] %}active{% endif %}" href="{{ url_for('guardias') }}">
+          <i class="bi bi-calendar2-check"></i> Guardias
+        </a>
+        <a class="nav-link {% if request.endpoint == 'ausencias' %}active{% endif %}" href="{{ url_for('ausencias') }}">
+          <i class="bi bi-person-x"></i> Ausencias
+        </a>
+        <a class="nav-link {% if request.endpoint == 'mi_horario' %}active{% endif %}" href="{{ url_for('mi_horario') }}">
+          <i class="bi bi-table"></i> Mi horario
+        </a>
+        <a class="nav-link {% if request.endpoint == 'estadisticas' %}active{% endif %}" href="{{ url_for('estadisticas') }}">
+          <i class="bi bi-bar-chart"></i> Estadísticas
+        </a>
+        {% if current_user.es_admin %}
+        <hr style="border-color:#2d5f8a; margin: .5rem 1rem;">
+        <a class="nav-link {% if request.endpoint == 'profesores' %}active{% endif %}" href="{{ url_for('profesores') }}">
+          <i class="bi bi-people"></i> Profesores
+        </a>
+        <a class="nav-link {% if request.endpoint == 'importar_horarios' %}active{% endif %}" href="{{ url_for('importar_horarios') }}">
+          <i class="bi bi-file-earmark-excel"></i> Importar horarios
+        </a>
+        <a class="nav-link {% if request.endpoint == 'configuracion' %}active{% endif %}" href="{{ url_for('configuracion') }}">
+          <i class="bi bi-gear"></i> Configuración
+        </a>
+        {% endif %}
+      </nav>
+      <div class="p-3">
+        <small class="text-secondary d-block mb-1">{{ current_user.nombre }}</small>
+        <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-secondary w-100">
+          <i class="bi bi-box-arrow-left"></i> Salir
+        </a>
+      </div>
+    </div>
+
+    <div class="col p-4">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
+            {{ msg }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+        {% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

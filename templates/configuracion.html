@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% block title %}Configuración{% endblock %}
+{% block content %}
+<h3 class="fw-bold mb-4"><i class="bi bi-gear me-2 text-primary"></i>Configuración</h3>
+
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <div class="card border-primary">
+      <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-toggles me-2"></i>Modo de gestión de guardias
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('cambiar_modo') }}">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="card h-100 {% if cfg.modo_guardias == 'automatico' %}border-success bg-success bg-opacity-10{% endif %}"
+                   style="cursor:pointer" onclick="document.getElementById('modoAuto').click()">
+                <div class="card-body">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="modo_guardias" value="automatico"
+                      id="modoAuto" {{ 'checked' if cfg.modo_guardias == 'automatico' }}>
+                    <label class="form-check-label fw-bold" for="modoAuto">
+                      <i class="bi bi-robot me-2 text-success"></i>Opción A — Automático
+                    </label>
+                  </div>
+                  <p class="text-muted small mt-2 mb-0">
+                    El profesor reporta su ausencia y el sistema asigna la guardia y envía el email al instante, sin intervención del administrador.
+                  </p>
+                  <p class="small mt-2 mb-0"><strong>Ideal para:</strong> épocas normales del curso donde el flujo es ágil.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card h-100 {% if cfg.modo_guardias == 'manual' %}border-warning bg-warning bg-opacity-10{% endif %}"
+                   style="cursor:pointer" onclick="document.getElementById('modoManual').click()">
+                <div class="card-body">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="modo_guardias" value="manual"
+                      id="modoManual" {{ 'checked' if cfg.modo_guardias == 'manual' }}>
+                    <label class="form-check-label fw-bold" for="modoManual">
+                      <i class="bi bi-person-check me-2 text-warning"></i>Opción B — Manual
+                    </label>
+                  </div>
+                  <p class="text-muted small mt-2 mb-0">
+                    El profesor reporta la ausencia, el admin recibe un aviso y aprueba la asignación antes de que se notifique al sustituto.
+                  </p>
+                  <p class="small mt-2 mb-0"><strong>Ideal para:</strong> épocas especiales, exámenes, eventos donde conviene revisar antes.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 text-end">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-2"></i>Guardar modo
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-envelope me-2"></i>Configuración de email
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info small">
+          <strong>¿Cómo obtener la contraseña de aplicación de Google?</strong><br>
+          1. Entra en <strong>myaccount.google.com</strong> con el correo del colegio<br>
+          2. Ve a <strong>Seguridad → Verificación en dos pasos</strong> (actívala si no está)<br>
+          3. Busca <strong>"Contraseñas de aplicación"</strong><br>
+          4. Crea una nueva para "Correo" y copia los 16 caracteres que te da<br>
+          5. Pégala abajo en "Contraseña de aplicación"
+        </div>
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label">Email del colegio (remitente)</label>
+            <input type="email" name="mail_username" class="form-control"
+              value="{{ cfg.mail_username or '' }}"
+              placeholder="guardias@laasunciondonostia.com">
+            <div class="form-text">Usa una cuenta del colegio para enviar los avisos.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Contraseña de aplicación Google</label>
+            <input type="password" name="mail_password" class="form-control"
+              value="{{ cfg.mail_password or '' }}"
+              placeholder="xxxx xxxx xxxx xxxx">
+          </div>
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="activo" id="emailActivo"
+                {{ 'checked' if cfg.activo else '' }}>
+              <label class="form-check-label" for="emailActivo">
+                Activar envío de emails
+              </label>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-save me-2"></i>Guardar configuración
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-info-circle me-2"></i>Estado del sistema
+      </div>
+      <div class="card-body">
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item d-flex justify-content-between">
+            Email configurado
+            {% if cfg.mail_username %}
+              <span class="badge bg-success">Sí</span>
+            {% else %}
+              <span class="badge bg-danger">No</span>
+            {% endif %}
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            Envío activo
+            {% if cfg.activo %}
+              <span class="badge bg-success">Sí</span>
+            {% else %}
+              <span class="badge bg-secondary">No</span>
+            {% endif %}
+          </li>
+          <li class="list-group-item d-flex justify-content-between">
+            Servidor SMTP
+            <span class="text-muted small">smtp.gmail.com:587</span>
+          </li>
+        </ul>
+        <div class="alert alert-warning small mt-3 mb-0">
+          Mientras el email no esté configurado, las guardias se asignan igualmente pero el profesor
+          <strong>no recibe aviso automático</strong>. Puedes configurarlo en cualquier momento.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

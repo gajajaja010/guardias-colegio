@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}Reportar ausencia{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('ausencias') }}" class="text-decoration-none text-muted">
+    <i class="bi bi-arrow-left me-1"></i>Volver a ausencias
+  </a>
+</div>
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-person-x me-2 text-warning"></i>Reportar ausencia</h5>
+      </div>
+      <div class="card-body">
+
+        {% if cfg.modo_guardias == 'automatico' %}
+        <div class="alert alert-success small">
+          <i class="bi bi-robot me-2"></i>
+          <strong>Modo automático:</strong> al guardar se asignará la guardia al instante y el sustituto recibirá un email.
+        </div>
+        {% else %}
+        <div class="alert alert-info small">
+          <i class="bi bi-hourglass-split me-2"></i>
+          <strong>Modo manual:</strong> tu aviso llegará al administrador, que aprobará y asignará la guardia.
+        </div>
+        {% endif %}
+
+        <form method="POST">
+          {% if current_user.es_admin and profesores %}
+          <div class="mb-3">
+            <label class="form-label">Profesor ausente <span class="text-danger">*</span></label>
+            <select name="profesor_id" class="form-select" required>
+              <option value="">Selecciona un profesor...</option>
+              {% for p in profesores %}
+              <option value="{{ p.id }}">{{ p.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label">Fecha <span class="text-danger">*</span></label>
+            <input type="date" name="fecha_inicio" class="form-control" id="fechaInput" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">¿Qué franjas no puedes cubrir? <span class="text-danger">*</span></label>
+            <div class="border rounded p-3">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="todasFranjas" onchange="toggleTodas(this)">
+                <label class="form-check-label fw-semibold" for="todasFranjas">Todo el día</label>
+              </div>
+              <hr class="my-2">
+              {% for f in franjas %}
+              <div class="form-check">
+                <input class="form-check-input franja-check" type="checkbox" name="franjas" value="{{ f }}" id="franja_{{ loop.index }}">
+                <label class="form-check-label" for="franja_{{ loop.index }}">{{ f }}</label>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="form-text">Si no seleccionas ninguna, se considera todo el día.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Motivo <span class="text-danger">*</span></label>
+            <input type="text" name="motivo" class="form-control"
+              placeholder="Enfermedad, asunto personal, formación..." required>
+          </div>
+
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="es_baja" id="esBaja">
+              <label class="form-check-label" for="esBaja">
+                <strong>Es baja médica</strong> — quedaré excluido de guardias hasta que vuelva
+              </label>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Notas adicionales</label>
+            <textarea name="notas" class="form-control" rows="2"
+              placeholder="Tarea pendiente, instrucciones para el sustituto..."></textarea>
+          </div>
+
+          <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+            <a href="{{ url_for('ausencias') }}" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-warning">
+              <i class="bi bi-send me-1"></i>Reportar ausencia
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('fechaInput').value = new Date().toISOString().split('T')[0];
+
+function toggleTodas(cb) {
+  document.querySelectorAll('.franja-check').forEach(f => {
+    f.checked = false;
+    f.disabled = cb.checked;
+  });
+}
+</script>
+{% endblock %}

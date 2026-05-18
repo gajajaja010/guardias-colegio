@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% block title %}Inicio{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h3 class="mb-0 fw-bold">Bienvenido, {{ current_user.nombre.split()[0] }}</h3>
+    <small class="text-muted">{{ hoy.strftime('%A, %d de %B de %Y') }}</small>
+  </div>
+  {% if current_user.es_admin %}
+  <a href="{{ url_for('nueva_guardia') }}" class="btn btn-primary">
+    <i class="bi bi-plus-circle me-2"></i>Nueva guardia
+  </a>
+  {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-primary fs-1 fw-bold">{{ guardias_hoy|length }}</div>
+      <div class="text-muted small">Guardias hoy</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-success fs-1 fw-bold">{{ total_profesores }}</div>
+      <div class="text-muted small">Profesores activos</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-warning fs-1 fw-bold">{{ de_baja }}</div>
+      <div class="text-muted small">De baja</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card text-center p-3">
+      <div class="text-info fs-1 fw-bold">{{ guardias_mes }}</div>
+      <div class="text-muted small">Guardias este mes</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header bg-white">
+        <i class="bi bi-calendar2-check me-2 text-primary"></i>Guardias de hoy
+      </div>
+      <div class="card-body p-0">
+        {% if guardias_hoy %}
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr><th>Franja</th><th>Ausente</th><th>Cubre</th><th>Estado</th></tr>
+          </thead>
+          <tbody>
+            {% for g in guardias_hoy %}
+            <tr>
+              <td><span class="badge bg-secondary">{{ g.franja }}</span></td>
+              <td>{{ g.profesor_ausente.nombre }}</td>
+              <td>
+                {% if g.profesor_asignado %}{{ g.profesor_asignado.nombre }}
+                {% else %}<span class="text-danger">Sin cubrir</span>{% endif %}
+              </td>
+              <td><span class="badge badge-{{ g.estado }}">{{ g.estado }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-check-circle fs-2 text-success"></i>
+          <p class="mt-2 mb-0">No hay guardias hoy</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-header bg-white">
+        <i class="bi bi-person-check me-2 text-success"></i>Mis próximas guardias
+      </div>
+      <div class="card-body p-0">
+        {% if mis_guardias %}
+        <ul class="list-group list-group-flush">
+          {% for g in mis_guardias %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">{{ g.franja }}</div>
+              <small class="text-muted">{{ g.fecha.strftime('%d/%m/%Y') }} — Cubre a {{ g.profesor_ausente.nombre }}</small>
+            </div>
+            <span class="badge badge-{{ g.estado }}">{{ g.estado }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-emoji-smile fs-2"></i>
+          <p class="mt-2 mb-0">No tienes guardias pendientes</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header bg-white">
+        <i class="bi bi-lightning me-2 text-warning"></i>Accesos rápidos
+      </div>
+      <div class="card-body d-grid gap-2">
+        <a href="{{ url_for('nueva_ausencia') }}" class="btn btn-outline-warning btn-sm">
+          <i class="bi bi-person-x me-2"></i>Reportar mi ausencia
+        </a>
+        <a href="{{ url_for('mi_horario') }}" class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-table me-2"></i>Gestionar mi horario
+        </a>
+        {% if current_user.es_admin %}
+        <a href="{{ url_for('nueva_guardia') }}" class="btn btn-outline-success btn-sm">
+          <i class="bi bi-plus-circle me-2"></i>Crear guardia
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

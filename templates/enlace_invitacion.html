@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Enlace de invitación{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('profesores') }}" class="text-decoration-none text-muted">
+    <i class="bi bi-arrow-left me-1"></i>Volver a profesores
+  </a>
+</div>
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-link-45deg me-2 text-primary"></i>Enlace de invitación</h5>
+      </div>
+      <div class="card-body">
+        <p>Copia este enlace y mándalo manualmente a <strong>{{ profesor.nombre }}</strong> ({{ profesor.email }}):</p>
+        <div class="input-group mb-3">
+          <input type="text" class="form-control font-monospace small" id="enlaceInput" value="{{ enlace }}" readonly>
+          <button class="btn btn-outline-primary" onclick="copiar()">
+            <i class="bi bi-clipboard" id="iconCopiar"></i>
+          </button>
+        </div>
+        <div class="alert alert-warning small">
+          <i class="bi bi-clock me-2"></i>Este enlace es válido durante <strong>48 horas</strong>.
+          Pasado ese tiempo, vuelve a esta página para generar uno nuevo.
+        </div>
+        <hr>
+        <p class="small text-muted mb-2">Para activar el envío automático por email, ve a:</p>
+        <a href="{{ url_for('configuracion') }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-gear me-1"></i>Configuración de email
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function copiar() {
+  navigator.clipboard.writeText(document.getElementById('enlaceInput').value);
+  document.getElementById('iconCopiar').className = 'bi bi-check-lg text-success';
+  setTimeout(() => document.getElementById('iconCopiar').className = 'bi bi-clipboard', 2000);
+}
+</script>
+{% endblock %}
