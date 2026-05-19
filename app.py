@@ -1345,6 +1345,23 @@ def guardar_requisito_hc():
     return redirect(url_for('horarios_construccion', tab='asignaturas'))
 
 
+@app.route('/horarios-construccion/asignatura/<int:asig_id>/requisitos', methods=['POST'])
+@login_required
+def guardar_requisitos_asignatura_hc(asig_id):
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    asig = Asignatura.query.get_or_404(asig_id)
+    curso_ids_marcados = [int(x) for x in request.form.getlist('curso_ids')]
+    CursoAsignatura.query.filter_by(asignatura_id=asig_id).delete()
+    for curso_id in curso_ids_marcados:
+        horas = int(request.form.get(f'horas_{curso_id}', 1))
+        db.session.add(CursoAsignatura(
+            curso_id=curso_id, asignatura_id=asig_id, horas_semanales=max(1, horas)))
+    db.session.commit()
+    flash(f'Requisitos de {asig.nombre} guardados.', 'success')
+    return redirect(url_for('horarios_construccion', tab='asignaturas'))
+
+
 @app.route('/horarios-construccion/profesor/<int:prof_id>/config', methods=['POST'])
 @login_required
 def config_profesor_hc(prof_id):

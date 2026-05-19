@@ -75,53 +75,43 @@
             </form>
           </div>
 
-          <p class="text-muted small mb-2 fw-semibold">Horas semanales por curso:</p>
-
-          <div class="d-flex flex-wrap gap-2 mb-3">
-            {% set tiene_requisitos = [] %}
-            {% for curso in cursos %}
-              {% set req = asig.curso_requisitos | selectattr('curso_id', 'equalto', curso.id) | list | first %}
-              {% if req %}
-                {% if tiene_requisitos.append(1) %}{% endif %}
-                <div class="d-inline-flex align-items-center gap-1 border rounded px-2 py-1 bg-white">
-                  <span class="fw-semibold small">{{ curso.nombre }}</span>
-                  <span class="badge bg-secondary">{{ req.horas_semanales }}h</span>
-                  <form method="post" action="{{ url_for('guardar_requisito_hc') }}" class="d-inline m-0">
-                    <input type="hidden" name="curso_id" value="{{ curso.id }}">
-                    <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
-                    <input type="hidden" name="accion" value="eliminar">
-                    <button type="submit" class="btn btn-link p-0 text-danger ms-1" style="line-height:1;" title="Quitar">
-                      <i class="bi bi-x-lg" style="font-size:.75rem;"></i>
-                    </button>
-                  </form>
-                </div>
-              {% endif %}
-            {% endfor %}
-            {% if not tiene_requisitos %}
-              <span class="text-muted small fst-italic">Sin cursos asignados todavía.</span>
-            {% endif %}
-          </div>
-
-          {# Formulario inline para añadir curso #}
           {% if cursos %}
-          <form method="post" action="{{ url_for('guardar_requisito_hc') }}" class="d-flex align-items-end gap-2 flex-wrap">
-            <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
-            <input type="hidden" name="accion" value="guardar">
-            <div>
-              <label class="form-label small mb-1">Curso</label>
-              <select name="curso_id" class="form-select form-select-sm" required style="min-width:120px;">
-                <option value="">Seleccionar…</option>
+          <form method="post" action="{{ url_for('guardar_requisitos_asignatura_hc', asig_id=asig.id) }}">
+            <table class="table table-sm mb-2">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:40px"></th>
+                  <th>Curso</th>
+                  <th style="width:130px">Horas/semana</th>
+                </tr>
+              </thead>
+              <tbody>
                 {% for curso in cursos %}
-                  <option value="{{ curso.id }}">{{ curso.nombre }}</option>
+                {% set req = asig.curso_requisitos | selectattr('curso_id', 'equalto', curso.id) | list | first %}
+                <tr>
+                  <td class="align-middle text-center">
+                    <input class="form-check-input curso-check" type="checkbox"
+                           name="curso_ids" value="{{ curso.id }}"
+                           id="chk_{{ asig.id }}_{{ curso.id }}"
+                           {% if req %}checked{% endif %}
+                           onchange="toggleHoras(this)">
+                  </td>
+                  <td class="align-middle">
+                    <label for="chk_{{ asig.id }}_{{ curso.id }}" class="mb-0">{{ curso.nombre }}</label>
+                  </td>
+                  <td class="align-middle">
+                    <input type="number" name="horas_{{ curso.id }}"
+                           class="form-control form-control-sm"
+                           value="{{ req.horas_semanales if req else 1 }}"
+                           min="1" max="20"
+                           {% if not req %}disabled{% endif %}>
+                  </td>
+                </tr>
                 {% endfor %}
-              </select>
-            </div>
-            <div>
-              <label class="form-label small mb-1">Horas/semana</label>
-              <input type="number" name="horas" class="form-control form-control-sm" value="1" min="1" max="10" style="width:80px;">
-            </div>
-            <button type="submit" class="btn btn-outline-primary btn-sm">
-              <i class="bi bi-plus-lg me-1"></i>Añadir
+              </tbody>
+            </table>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-floppy me-1"></i>Guardar cambios
             </button>
           </form>
           {% else %}
@@ -430,6 +420,15 @@
 
 {% block scripts %}
 <script>
+function toggleHoras(checkbox) {
+  var row = checkbox.closest('tr');
+  var input = row.querySelector('input[type="number"]');
+  if (input) {
+    input.disabled = !checkbox.checked;
+    if (checkbox.checked) input.focus();
+  }
+}
+
 (function () {
   var modalEl = document.getElementById('modalFranja');
   if (!modalEl) return;
