@@ -166,12 +166,24 @@ class Curso(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(50), unique=True, nullable=False)
     orden = db.Column(db.Integer, default=0)
+    etapa = db.Column(db.String(50))
+    aula_cerrada = db.Column(db.Boolean, default=False)
 
 
 class Asignatura(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), unique=True, nullable=False)
     color = db.Column(db.String(20), default='#0d6efd')
+    etapa = db.Column(db.String(50))
+
+
+class ProfesorEspecialidad(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
+    horas_semanales = db.Column(db.Integer, default=0)
+    __table_args__ = (db.UniqueConstraint('profesor_id', 'nombre'),)
+    profesor = db.relationship('Profesor', backref='especialidades')
 
 
 class CursoAsignatura(db.Model):
@@ -1138,11 +1150,23 @@ def tutorias():
             if nombre:
                 if not Curso.query.filter_by(nombre=nombre).first():
                     orden = Curso.query.count()
-                    db.session.add(Curso(nombre=nombre, orden=orden))
+                    db.session.add(Curso(
+                        nombre=nombre, orden=orden,
+                        etapa=request.form.get('etapa', '').strip() or None,
+                        aula_cerrada=bool(request.form.get('aula_cerrada'))
+                    ))
                     db.session.commit()
                     flash(f'Curso "{nombre}" añadido.', 'success')
                 else:
                     flash(f'El curso "{nombre}" ya existe.', 'warning')
+
+        elif accion == 'edit_curso':
+            curso_id = int(request.form.get('curso_id', 0))
+            curso = Curso.query.get_or_404(curso_id)
+            curso.etapa = request.form.get('etapa', '').strip() or None
+            curso.aula_cerrada = bool(request.form.get('aula_cerrada'))
+            db.session.commit()
+            flash('Curso actualizado.', 'success')
 
         elif accion == 'delete_curso':
             curso_id = int(request.form.get('curso_id', 0))
@@ -1187,14 +1211,30 @@ def generar_horario_automatico():
     HorarioAsignacion.query.delete()
     db.session.flush()
 
+    # Load course info (etapa + aula_cerrada)
+    cursos_map = {c.id: c for c in Curso.query.all()}
+    asig_map = {a.id: a for a in Asignatura.query.all()}
+
     tasks = []
     for req in CursoAsignatura.query.all():
+        curso = cursos_map.get(req.curso_id)
+        if curso and curso.aula_cerrada:
+            continue  # aula cerrada: tutoras siempre presentes, no hay sustituciones externas
         for _ in range(req.horas_semanales):
             tasks.append((req.curso_id, req.asignatura_id))
 
     prof_por_asig = defaultdict(list)
     for pa in ProfesorAsignatura.query.all():
         prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
+
+    # etapa compatibility: professor etapa must match subject etapa (if set)
+    prof_etapa = {p.id: p.etapa for p in Profesor.query.filter_by(activo=True).all()}
+
+    def etapa_compatible(prof_id, asig_id):
+        asig = asig_map.get(asig_id)
+        if not asig or not asig.etapa:
+            return True  # no restriction
+        return prof_etapa.get(prof_id) == asig.etapa
 
     tasks.sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
 
@@ -1210,7 +1250,8 @@ def generar_horario_automatico():
     sin_asignar = []
 
     for curso_id, asig_id in tasks:
-        profesores = prof_por_asig.get(asig_id, [])
+        profesores = [pid for pid in prof_por_asig.get(asig_id, [])
+                      if etapa_compatible(pid, asig_id)]
         if not profesores:
             sin_asignar.append((curso_id, asig_id))
             continue
@@ -1280,13 +1321,17 @@ def horarios_construccion():
         p.id: HorarioAsignacion.query.filter_by(profesor_id=p.id).count()
         for p in profesores_lista
     }
+    prof_especialidades = {
+        p.id: ProfesorEspecialidad.query.filter_by(profesor_id=p.id).order_by(ProfesorEspecialidad.nombre).all()
+        for p in profesores_lista
+    }
 
     return render_template('horarios_construccion.html',
         tab=tab, asignaturas=asignaturas, cursos=cursos,
         profesores=profesores_lista, curso_sel=curso_sel,
         horario_grid=horario_grid, prof_asignaturas=prof_asignaturas,
-        prof_horas_asig=prof_horas_asig,
-        dias=DIAS_SEMANA, franjas=FRANJAS)
+        prof_horas_asig=prof_horas_asig, prof_especialidades=prof_especialidades,
+        etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS)
 
 
 @app.route('/horarios-construccion/asignatura/nueva', methods=['POST'])
@@ -1296,8 +1341,9 @@ def nueva_asignatura_hc():
         return redirect(url_for('dashboard'))
     nombre = request.form.get('nombre', '').strip()
     color = request.form.get('color', '#0d6efd').strip()
+    etapa = request.form.get('etapa', '').strip() or None
     if nombre and not Asignatura.query.filter_by(nombre=nombre).first():
-        db.session.add(Asignatura(nombre=nombre, color=color))
+        db.session.add(Asignatura(nombre=nombre, color=color, etapa=etapa))
         db.session.commit()
         flash(f'Asignatura "{nombre}" añadida.', 'success')
     elif nombre:
@@ -1379,6 +1425,29 @@ def config_profesor_hc(prof_id):
     return redirect(url_for('horarios_construccion', tab='profesores'))
 
 
+@app.route('/horarios-construccion/profesor/<int:prof_id>/especialidades', methods=['POST'])
+@login_required
+def guardar_especialidades_hc(prof_id):
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    p = Profesor.query.get_or_404(prof_id)
+    ProfesorEspecialidad.query.filter_by(profesor_id=prof_id).delete()
+    nombres = request.form.getlist('esp_nombre')
+    horas_list = request.form.getlist('esp_horas')
+    for nombre, horas in zip(nombres, horas_list):
+        nombre = nombre.strip()
+        if nombre:
+            try:
+                h = max(0, int(horas))
+            except ValueError:
+                h = 0
+            db.session.add(ProfesorEspecialidad(
+                profesor_id=prof_id, nombre=nombre, horas_semanales=h))
+    db.session.commit()
+    flash(f'Especialidades de {p.nombre} guardadas.', 'success')
+    return redirect(url_for('horarios_construccion', tab='profesores'))
+
+
 @app.route('/horarios-construccion/generar', methods=['POST'])
 @login_required
 def generar_horario_hc():
@@ -1444,12 +1513,19 @@ def limpiar_horario_hc():
 
 def init_db():
     db.create_all()
-    try:
-        with db.engine.connect() as conn:
-            conn.execute(db.text('ALTER TABLE profesor ADD COLUMN horas_max_semanales INTEGER DEFAULT 25'))
-            conn.commit()
-    except Exception:
-        pass
+    migrations = [
+        'ALTER TABLE profesor ADD COLUMN horas_max_semanales INTEGER DEFAULT 25',
+        'ALTER TABLE curso ADD COLUMN etapa VARCHAR(50)',
+        'ALTER TABLE curso ADD COLUMN aula_cerrada BOOLEAN DEFAULT 0',
+        'ALTER TABLE asignatura ADD COLUMN etapa VARCHAR(50)',
+    ]
+    for sql in migrations:
+        try:
+            with db.engine.connect() as conn:
+                conn.execute(db.text(sql))
+                conn.commit()
+        except Exception:
+            pass
     if not Profesor.query.filter_by(es_admin=True).first():
         admin = Profesor(
             nombre='Administrador',

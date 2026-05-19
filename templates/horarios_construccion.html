@@ -43,6 +43,16 @@
             <input type="text" name="nombre" class="form-control" required placeholder="Ej: Matemáticas">
           </div>
           <div class="mb-3">
+            <label class="form-label fw-semibold">Etapa</label>
+            <select name="etapa" class="form-select form-select-sm">
+              <option value="">Todas las etapas</option>
+              {% for e in etapas %}
+              <option value="{{ e }}">{{ e }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Deja en blanco si aplica a todas.</div>
+          </div>
+          <div class="mb-3">
             <label class="form-label fw-semibold">Color</label>
             <div class="d-flex align-items-center gap-2">
               <input type="color" name="color" class="form-control form-control-color" value="#0d6efd" style="width:50px;height:38px;">
@@ -69,6 +79,9 @@
             <span class="badge rounded-pill px-3 py-1 fw-semibold" style="background:{{ asig.color }}">
               {{ asig.nombre }}
             </span>
+            {% if asig.etapa %}
+            <span class="badge bg-info text-dark" style="font-size:.75rem;">{{ asig.etapa }}</span>
+            {% endif %}
             {% set n = asig.curso_requisitos | length %}
             <small class="text-muted">
               {% if n %}{{ n }} curso{{ 's' if n != 1 }}{% else %}Sin cursos asignados{% endif %}
@@ -96,6 +109,8 @@
                 </thead>
                 <tbody>
                   {% for curso in cursos %}
+                  {# skip courses from incompatible etapa #}
+                  {% if not asig.etapa or not curso.etapa or asig.etapa == curso.etapa %}
                   {% set req = asig.curso_requisitos | selectattr('curso_id', 'equalto', curso.id) | list | first %}
                   <tr>
                     <td class="align-middle text-center">
@@ -107,6 +122,12 @@
                     </td>
                     <td class="align-middle">
                       <label for="chk_{{ asig.id }}_{{ curso.id }}" class="mb-0">{{ curso.nombre }}</label>
+                      {% if curso.etapa %}
+                      <span class="badge bg-light text-muted border ms-1" style="font-size:.7rem;">{{ curso.etapa }}</span>
+                      {% endif %}
+                      {% if curso.aula_cerrada %}
+                      <i class="bi bi-lock-fill text-dark ms-1" title="Aula cerrada"></i>
+                      {% endif %}
                     </td>
                     <td class="align-middle">
                       <input type="number" name="horas_{{ curso.id }}"
@@ -116,6 +137,7 @@
                              {% if not req %}disabled{% endif %}>
                     </td>
                   </tr>
+                  {% endif %}
                   {% endfor %}
                 </tbody>
               </table>
@@ -158,7 +180,8 @@
   {% for prof in profesores %}
   <div class="col-12">
     <div class="card">
-      <div class="card-body">
+      <div class="card-body pb-2">
+        {# — Asignaturas + horas — #}
         <form method="post" action="{{ url_for('config_profesor_hc', prof_id=prof.id) }}">
           <div class="row align-items-start g-3">
             <div class="col-md-3">
@@ -166,7 +189,7 @@
                 <i class="bi bi-person-circle me-1 text-primary"></i>{{ prof.nombre }}
               </div>
               {% if prof.etapa %}
-                <small class="text-muted">{{ prof.etapa }}</small><br>
+                <span class="badge bg-info text-dark mb-1">{{ prof.etapa }}</span><br>
               {% endif %}
               <small class="text-muted">
                 <i class="bi bi-clock me-1"></i>
@@ -186,6 +209,8 @@
               {% if asignaturas %}
               <div class="d-flex flex-wrap gap-2">
                 {% for asig in asignaturas %}
+                {# only show asignaturas compatible with this teacher's etapa #}
+                {% if not asig.etapa or not prof.etapa or asig.etapa == prof.etapa %}
                 <div class="form-check form-check-inline m-0">
                   <input class="form-check-input" type="checkbox" name="asignaturas"
                          id="pa_{{ prof.id }}_{{ asig.id }}" value="{{ asig.id }}"
@@ -194,6 +219,7 @@
                     <span class="badge rounded-pill px-2" style="background:{{ asig.color }}; font-size:.8rem;">{{ asig.nombre }}</span>
                   </label>
                 </div>
+                {% endif %}
                 {% endfor %}
               </div>
               {% else %}
@@ -207,6 +233,42 @@
             </div>
           </div>
         </form>
+
+        <hr class="my-2">
+
+        {# — Especialidades — #}
+        <form method="post" action="{{ url_for('guardar_especialidades_hc', prof_id=prof.id) }}"
+              id="formEsp_{{ prof.id }}">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <small class="fw-semibold text-muted">
+              <i class="bi bi-award me-1"></i>Especialidades
+            </small>
+            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2"
+                    onclick="addEsp({{ prof.id }})">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+            <button type="submit" class="btn btn-outline-primary btn-sm py-0 px-2 ms-auto">
+              <i class="bi bi-floppy me-1"></i>Guardar especialidades
+            </button>
+          </div>
+          <div id="espList_{{ prof.id }}" class="d-flex flex-wrap gap-2">
+            {% for esp in prof_especialidades[prof.id] %}
+            <div class="d-flex align-items-center gap-1 border rounded px-2 py-1 bg-light esp-item">
+              <input type="text" name="esp_nombre" class="form-control form-control-sm border-0 bg-transparent p-0"
+                     style="width:110px;" placeholder="Especialidad" value="{{ esp.nombre }}">
+              <input type="number" name="esp_horas" class="form-control form-control-sm border-0 bg-transparent p-0 text-center"
+                     style="width:48px;" min="0" max="40" value="{{ esp.horas_semanales }}"
+                     title="Horas/semana">
+              <small class="text-muted">h</small>
+              <button type="button" class="btn btn-link btn-sm p-0 text-danger ms-1"
+                      onclick="this.closest('.esp-item').remove()">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
+            {% endfor %}
+          </div>
+        </form>
+
       </div>
     </div>
   </div>
@@ -232,7 +294,9 @@
     <label class="fw-semibold me-1 mb-0">Curso:</label>
     <select name="curso_id" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
       {% for c in cursos %}
-        <option value="{{ c.id }}" {% if curso_sel and c.id == curso_sel.id %}selected{% endif %}>{{ c.nombre }}</option>
+        <option value="{{ c.id }}" {% if curso_sel and c.id == curso_sel.id %}selected{% endif %}>
+          {{ c.nombre }}{% if c.aula_cerrada %} 🔒{% endif %}
+        </option>
       {% endfor %}
     </select>
   </form>
@@ -260,10 +324,19 @@
   </div>
 {% elif curso_sel %}
 
+{% if curso_sel.aula_cerrada %}
+<div class="alert alert-dark d-flex align-items-center gap-2">
+  <i class="bi bi-lock-fill fs-5"></i>
+  <span><strong>Aula cerrada.</strong> Las tutoras de esta clase siempre están presentes. No se asignan sustitutos.</span>
+</div>
+{% endif %}
+
 {# — Tabla del horario — #}
 <div class="card mb-4">
   <div class="card-header bg-white fw-semibold">
     <i class="bi bi-table me-1"></i>Horario de <strong>{{ curso_sel.nombre }}</strong>
+    {% if curso_sel.aula_cerrada %}<i class="bi bi-lock-fill ms-1 text-dark"></i>{% endif %}
+    {% if curso_sel.etapa %}<span class="badge bg-info text-dark ms-2">{{ curso_sel.etapa }}</span>{% endif %}
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">
@@ -438,6 +511,19 @@ function toggleHoras(checkbox) {
     input.disabled = !checkbox.checked;
     if (checkbox.checked) input.focus();
   }
+}
+
+function addEsp(profId) {
+  var container = document.getElementById('espList_' + profId);
+  var div = document.createElement('div');
+  div.className = 'd-flex align-items-center gap-1 border rounded px-2 py-1 bg-light esp-item';
+  div.innerHTML =
+    '<input type="text" name="esp_nombre" class="form-control form-control-sm border-0 bg-transparent p-0" style="width:110px;" placeholder="Especialidad">' +
+    '<input type="number" name="esp_horas" class="form-control form-control-sm border-0 bg-transparent p-0 text-center" style="width:48px;" min="0" max="40" value="0" title="Horas/semana">' +
+    '<small class="text-muted">h</small>' +
+    '<button type="button" class="btn btn-link btn-sm p-0 text-danger ms-1" onclick="this.closest(\'.esp-item\').remove()"><i class="bi bi-x-lg"></i></button>';
+  container.appendChild(div);
+  div.querySelector('input[type="text"]').focus();
 }
 
 (function () {

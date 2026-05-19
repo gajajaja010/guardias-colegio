@@ -19,6 +19,7 @@
           <thead class="table-light">
             <tr>
               <th>Curso</th>
+              <th>Etapa</th>
               <th>Tutor/a asignado/a</th>
               <th style="width:180px">Cambiar tutor</th>
               <th style="width:60px"></th>
@@ -27,7 +28,21 @@
           <tbody>
             {% for c in cursos %}
             <tr>
-              <td class="align-middle fw-semibold">{{ c.nombre }}</td>
+              <td class="align-middle fw-semibold">
+                {{ c.nombre }}
+                {% if c.aula_cerrada %}
+                <span class="badge bg-dark ms-1" title="Aula cerrada: solo las tutoras">
+                  <i class="bi bi-lock-fill"></i>
+                </span>
+                {% endif %}
+              </td>
+              <td class="align-middle">
+                {% if c.etapa %}
+                <span class="badge bg-info text-dark">{{ c.etapa }}</span>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
               <td class="align-middle">
                 {% if tutores[c.nombre] %}
                 <span class="badge bg-success">{{ tutores[c.nombre].nombre }}</span>
@@ -54,13 +69,24 @@
                 </form>
               </td>
               <td class="align-middle text-end">
-                <form method="POST" onsubmit="return confirm('¿Eliminar el curso {{ c.nombre }}?')">
-                  <input type="hidden" name="accion" value="delete_curso">
-                  <input type="hidden" name="curso_id" value="{{ c.id }}">
-                  <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar curso">
-                    <i class="bi bi-trash"></i>
+                <div class="d-flex gap-1 justify-content-end">
+                  <button type="button" class="btn btn-sm btn-outline-secondary"
+                          title="Editar etapa / aula cerrada"
+                          data-bs-toggle="modal" data-bs-target="#modalEditCurso"
+                          data-id="{{ c.id }}"
+                          data-nombre="{{ c.nombre }}"
+                          data-etapa="{{ c.etapa or '' }}"
+                          data-cerrada="{{ '1' if c.aula_cerrada else '' }}">
+                    <i class="bi bi-gear"></i>
                   </button>
-                </form>
+                  <form method="POST" onsubmit="return confirm('¿Eliminar el curso {{ c.nombre }}?')">
+                    <input type="hidden" name="accion" value="delete_curso">
+                    <input type="hidden" name="curso_id" value="{{ c.id }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar curso">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -88,6 +114,24 @@
             <input type="text" name="nombre" class="form-control"
               placeholder="Ej: 1ºA, 3ºB, Infantil 4 años..." required>
           </div>
+          <div class="mb-3">
+            <label class="form-label">Etapa educativa</label>
+            <select name="etapa" class="form-select">
+              <option value="">Sin especificar</option>
+              {% for e in ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
+              <option value="{{ e }}">{{ e }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="aula_cerrada" id="aulaCerrada">
+              <label class="form-check-label" for="aulaCerrada">
+                <i class="bi bi-lock me-1"></i>Aula cerrada
+                <small class="text-muted d-block" style="font-size:.8em;">Las tutoras siempre están presentes. No entran sustitutos.</small>
+              </label>
+            </div>
+          </div>
           <div class="d-grid">
             <button type="submit" class="btn btn-primary">
               <i class="bi bi-plus-lg me-1"></i>Añadir curso
@@ -104,9 +148,63 @@
           <li>El tutor de un curso tiene prioridad para cubrir guardias en su clase.</li>
           <li>Al editar un profesor puedes asignarle un aula de tutoría desde la lista de cursos.</li>
           <li>También puedes marcar qué clases no puede cubrir.</li>
+          <li><strong>Aula cerrada</strong>: las clases de 1-2 años en las que las tutoras siempre están y no entra nadie más.</li>
         </ul>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Modal editar curso (etapa + aula cerrada) -->
+<div class="modal fade" id="modalEditCurso" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <form method="POST">
+        <input type="hidden" name="accion" value="edit_curso">
+        <input type="hidden" name="curso_id" id="editCursoId">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-gear me-1"></i>Editar <strong id="editCursoNombre"></strong></h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Etapa educativa</label>
+            <select name="etapa" id="editCursoEtapa" class="form-select">
+              <option value="">Sin especificar</option>
+              {% for e in ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
+              <option value="{{ e }}">{{ e }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="aula_cerrada" id="editAulaCerrada">
+            <label class="form-check-label" for="editAulaCerrada">
+              <i class="bi bi-lock me-1"></i>Aula cerrada
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var modalEl = document.getElementById('modalEditCurso');
+  if (!modalEl) return;
+  modalEl.addEventListener('show.bs.modal', function (e) {
+    var btn = e.relatedTarget;
+    document.getElementById('editCursoId').value = btn.getAttribute('data-id');
+    document.getElementById('editCursoNombre').textContent = btn.getAttribute('data-nombre');
+    document.getElementById('editCursoEtapa').value = btn.getAttribute('data-etapa');
+    document.getElementById('editAulaCerrada').checked = btn.getAttribute('data-cerrada') === '1';
+  });
+})();
+</script>
 {% endblock %}
