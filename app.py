@@ -57,6 +57,7 @@ class Profesor(UserMixin, db.Model):
     de_baja = db.Column(db.Boolean, default=False)
     fecha_baja = db.Column(db.Date)
     fecha_vuelta = db.Column(db.Date)
+    horas_max_semanales = db.Column(db.Integer, default=25)
     creado = db.Column(db.DateTime, default=datetime.utcnow)
 
     horario = db.relationship('HorarioProfesor', backref='profesor', lazy=True, cascade='all, delete-orphan')
@@ -165,6 +166,42 @@ class Curso(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(50), unique=True, nullable=False)
     orden = db.Column(db.Integer, default=0)
+
+
+class Asignatura(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), unique=True, nullable=False)
+    color = db.Column(db.String(20), default='#0d6efd')
+
+
+class CursoAsignatura(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    curso_id = db.Column(db.Integer, db.ForeignKey('curso.id'), nullable=False)
+    asignatura_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=False)
+    horas_semanales = db.Column(db.Integer, default=1)
+    __table_args__ = (db.UniqueConstraint('curso_id', 'asignatura_id'),)
+    curso = db.relationship('Curso', backref='requisitos')
+    asignatura = db.relationship('Asignatura', backref='curso_requisitos')
+
+
+class ProfesorAsignatura(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
+    asignatura_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=False)
+    __table_args__ = (db.UniqueConstraint('profesor_id', 'asignatura_id'),)
+
+
+class HorarioAsignacion(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    curso_id = db.Column(db.Integer, db.ForeignKey('curso.id'), nullable=False)
+    asignatura_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=False)
+    profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
+    dia = db.Column(db.String(20), nullable=False)
+    franja = db.Column(db.String(30), nullable=False)
+    __table_args__ = (db.UniqueConstraint('curso_id', 'dia', 'franja'),)
+    curso = db.relationship('Curso')
+    asignatura = db.relationship('Asignatura')
+    profesor = db.relationship('Profesor')
 
 
 class ConfiguracionEmail(db.Model):
@@ -1143,8 +1180,259 @@ def tutorias():
 
 # ───────────────────────────── INIT DB ─────────────────────────────
 
+def generar_horario_automatico():
+    import random
+    from collections import defaultdict
+
+    HorarioAsignacion.query.delete()
+    db.session.flush()
+
+    tasks = []
+    for req in CursoAsignatura.query.all():
+        for _ in range(req.horas_semanales):
+            tasks.append((req.curso_id, req.asignatura_id))
+
+    prof_por_asig = defaultdict(list)
+    for pa in ProfesorAsignatura.query.all():
+        prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
+
+    tasks.sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
+
+    franjas_clase = [f for f in FRANJAS if f != 'Patio']
+    slots = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
+
+    profesor_ocupado = defaultdict(set)
+    curso_ocupado = defaultdict(set)
+    profesor_horas = defaultdict(int)
+    prof_max = {p.id: p.horas_max_semanales or 25
+                for p in Profesor.query.filter_by(activo=True).all()}
+
+    sin_asignar = []
+
+    for curso_id, asig_id in tasks:
+        profesores = prof_por_asig.get(asig_id, [])
+        if not profesores:
+            sin_asignar.append((curso_id, asig_id))
+            continue
+
+        asignado = False
+        slots_s = slots[:]
+        random.shuffle(slots_s)
+
+        for dia, franja in slots_s:
+            slot = (dia, franja)
+            if slot in curso_ocupado[curso_id]:
+                continue
+            profs_s = profesores[:]
+            random.shuffle(profs_s)
+            for prof_id in profs_s:
+                if slot in profesor_ocupado[prof_id]:
+                    continue
+                if profesor_horas[prof_id] >= prof_max.get(prof_id, 25):
+                    continue
+                db.session.add(HorarioAsignacion(
+                    curso_id=curso_id, asignatura_id=asig_id,
+                    profesor_id=prof_id, dia=dia, franja=franja
+                ))
+                profesor_ocupado[prof_id].add(slot)
+                curso_ocupado[curso_id].add(slot)
+                profesor_horas[prof_id] += 1
+                asignado = True
+                break
+            if asignado:
+                break
+
+        if not asignado:
+            sin_asignar.append((curso_id, asig_id))
+
+    db.session.commit()
+    return sin_asignar
+
+
+# ─── CONSTRUCTOR DE HORARIOS ───
+
+@app.route('/horarios-construccion')
+@login_required
+def horarios_construccion():
+    if not current_user.es_admin:
+        flash('Solo administradores.', 'danger')
+        return redirect(url_for('dashboard'))
+    tab = request.args.get('tab', 'asignaturas')
+    curso_id = request.args.get('curso_id', type=int)
+
+    asignaturas = Asignatura.query.order_by(Asignatura.nombre).all()
+    cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
+    profesores_lista = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
+
+    curso_sel = None
+    horario_grid = {}
+    if tab == 'horario' and cursos:
+        curso_sel = Curso.query.get(curso_id) if curso_id else cursos[0]
+        if curso_sel:
+            for a in HorarioAsignacion.query.filter_by(curso_id=curso_sel.id).all():
+                horario_grid[(a.dia, a.franja)] = a
+
+    prof_asignaturas = {
+        p.id: [pa.asignatura_id for pa in ProfesorAsignatura.query.filter_by(profesor_id=p.id).all()]
+        for p in profesores_lista
+    }
+    prof_horas_asig = {
+        p.id: HorarioAsignacion.query.filter_by(profesor_id=p.id).count()
+        for p in profesores_lista
+    }
+
+    return render_template('horarios_construccion.html',
+        tab=tab, asignaturas=asignaturas, cursos=cursos,
+        profesores=profesores_lista, curso_sel=curso_sel,
+        horario_grid=horario_grid, prof_asignaturas=prof_asignaturas,
+        prof_horas_asig=prof_horas_asig,
+        dias=DIAS_SEMANA, franjas=FRANJAS)
+
+
+@app.route('/horarios-construccion/asignatura/nueva', methods=['POST'])
+@login_required
+def nueva_asignatura_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    nombre = request.form.get('nombre', '').strip()
+    color = request.form.get('color', '#0d6efd').strip()
+    if nombre and not Asignatura.query.filter_by(nombre=nombre).first():
+        db.session.add(Asignatura(nombre=nombre, color=color))
+        db.session.commit()
+        flash(f'Asignatura "{nombre}" añadida.', 'success')
+    elif nombre:
+        flash('Ya existe una asignatura con ese nombre.', 'warning')
+    return redirect(url_for('horarios_construccion', tab='asignaturas'))
+
+
+@app.route('/horarios-construccion/asignatura/<int:id>/eliminar', methods=['POST'])
+@login_required
+def eliminar_asignatura_hc(id):
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    a = Asignatura.query.get_or_404(id)
+    CursoAsignatura.query.filter_by(asignatura_id=id).delete()
+    ProfesorAsignatura.query.filter_by(asignatura_id=id).delete()
+    HorarioAsignacion.query.filter_by(asignatura_id=id).delete()
+    db.session.delete(a)
+    db.session.commit()
+    flash('Asignatura eliminada.', 'success')
+    return redirect(url_for('horarios_construccion', tab='asignaturas'))
+
+
+@app.route('/horarios-construccion/requisito', methods=['POST'])
+@login_required
+def guardar_requisito_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    curso_id = int(request.form.get('curso_id'))
+    asignatura_id = int(request.form.get('asignatura_id'))
+    horas = int(request.form.get('horas', 1))
+    accion = request.form.get('accion', 'guardar')
+    if accion == 'eliminar':
+        CursoAsignatura.query.filter_by(
+            curso_id=curso_id, asignatura_id=asignatura_id).delete()
+        db.session.commit()
+    else:
+        req = CursoAsignatura.query.filter_by(
+            curso_id=curso_id, asignatura_id=asignatura_id).first()
+        if req:
+            req.horas_semanales = horas
+        else:
+            db.session.add(CursoAsignatura(
+                curso_id=curso_id, asignatura_id=asignatura_id, horas_semanales=horas))
+        db.session.commit()
+    return redirect(url_for('horarios_construccion', tab='asignaturas'))
+
+
+@app.route('/horarios-construccion/profesor/<int:prof_id>/config', methods=['POST'])
+@login_required
+def config_profesor_hc(prof_id):
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    p = Profesor.query.get_or_404(prof_id)
+    p.horas_max_semanales = int(request.form.get('horas_max', 25))
+    asigs_sel = request.form.getlist('asignaturas')
+    ProfesorAsignatura.query.filter_by(profesor_id=prof_id).delete()
+    for asig_id in asigs_sel:
+        db.session.add(ProfesorAsignatura(
+            profesor_id=prof_id, asignatura_id=int(asig_id)))
+    db.session.commit()
+    flash(f'Configuración de {p.nombre} guardada.', 'success')
+    return redirect(url_for('horarios_construccion', tab='profesores'))
+
+
+@app.route('/horarios-construccion/generar', methods=['POST'])
+@login_required
+def generar_horario_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    sin_asignar = generar_horario_automatico()
+    if sin_asignar:
+        nombres = []
+        for curso_id, asig_id in sin_asignar[:5]:
+            c = Curso.query.get(curso_id)
+            a = Asignatura.query.get(asig_id)
+            nombres.append(f'{a.nombre} ({c.nombre})')
+        flash(f'Horario generado. No se pudieron asignar: {", ".join(nombres)}', 'warning')
+    else:
+        flash('Horario generado correctamente.', 'success')
+    return redirect(url_for('horarios_construccion', tab='horario'))
+
+
+@app.route('/horarios-construccion/asignar', methods=['POST'])
+@login_required
+def asignar_franja_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    curso_id = int(request.form.get('curso_id'))
+    dia = request.form.get('dia')
+    franja = request.form.get('franja')
+    asignatura_id = request.form.get('asignatura_id', '')
+    profesor_id = request.form.get('profesor_id', '')
+
+    existing = HorarioAsignacion.query.filter_by(
+        curso_id=curso_id, dia=dia, franja=franja).first()
+
+    if not asignatura_id or not profesor_id:
+        if existing:
+            db.session.delete(existing)
+            db.session.commit()
+    else:
+        if existing:
+            existing.asignatura_id = int(asignatura_id)
+            existing.profesor_id = int(profesor_id)
+        else:
+            db.session.add(HorarioAsignacion(
+                curso_id=curso_id, dia=dia, franja=franja,
+                asignatura_id=int(asignatura_id),
+                profesor_id=int(profesor_id)
+            ))
+        db.session.commit()
+    return redirect(url_for('horarios_construccion', tab='horario', curso_id=curso_id))
+
+
+@app.route('/horarios-construccion/limpiar', methods=['POST'])
+@login_required
+def limpiar_horario_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    HorarioAsignacion.query.delete()
+    db.session.commit()
+    flash('Horario borrado.', 'success')
+    return redirect(url_for('horarios_construccion', tab='horario'))
+
+
+# ───────────────────────────── INIT DB ─────────────────────────────
+
 def init_db():
     db.create_all()
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(db.text('ALTER TABLE profesor ADD COLUMN horas_max_semanales INTEGER DEFAULT 25'))
+            conn.commit()
+    except Exception:
+        pass
     if not Profesor.query.filter_by(es_admin=True).first():
         admin = Profesor(
             nombre='Administrador',

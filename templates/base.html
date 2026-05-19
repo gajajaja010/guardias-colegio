@@ -53,6 +53,9 @@
         <a class="nav-link {% if request.endpoint == 'tutorias' %}active{% endif %}" href="{{ url_for('tutorias') }}">
           <i class="bi bi-mortarboard"></i> Tutorías
         </a>
+        <a class="nav-link {% if request.endpoint == 'horarios_construccion' %}active{% endif %}" href="{{ url_for('horarios_construccion') }}">
+          <i class="bi bi-calendar3"></i> Horarios
+        </a>
         <a class="nav-link {% if request.endpoint == 'importar_horarios' %}active{% endif %}" href="{{ url_for('importar_horarios') }}">
           <i class="bi bi-file-earmark-excel"></i> Importar horarios
         </a>

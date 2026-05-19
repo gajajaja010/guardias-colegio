@@ -1,0 +1,479 @@
+{% extends 'base.html' %}
+{% block title %}Constructor de Horarios{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3 gap-3">
+  <h2 class="mb-0 fw-bold"><i class="bi bi-calendar3 me-2"></i>Constructor de Horarios</h2>
+</div>
+
+{# ── Pestañas de navegación ── #}
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'asignaturas' %}active{% endif %}" href="{{ url_for('horarios_construccion', tab='asignaturas') }}">
+      <i class="bi bi-book me-1"></i>Asignaturas
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'profesores' %}active{% endif %}" href="{{ url_for('horarios_construccion', tab='profesores') }}">
+      <i class="bi bi-people me-1"></i>Profesores
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'horario' %}active{% endif %}" href="{{ url_for('horarios_construccion', tab='horario') }}">
+      <i class="bi bi-table me-1"></i>Horario
+    </a>
+  </li>
+</ul>
+
+
+{# ══════════════════ TAB ASIGNATURAS ══════════════════ #}
+{% if tab == 'asignaturas' %}
+<div class="row g-4">
+
+  {# — Formulario nueva asignatura — #}
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-plus-circle me-1"></i>Nueva asignatura
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('nueva_asignatura_hc') }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nombre</label>
+            <input type="text" name="nombre" class="form-control" required placeholder="Ej: Matemáticas">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Color</label>
+            <div class="d-flex align-items-center gap-2">
+              <input type="color" name="color" class="form-control form-control-color" value="#0d6efd" style="width:50px;height:38px;">
+              <span class="text-muted small">Color del badge</span>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-plus-lg me-1"></i>Añadir asignatura
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# — Tabla de asignaturas — #}
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-list-ul me-1"></i>Asignaturas ({{ asignaturas|length }})
+      </div>
+      <div class="card-body p-0">
+        {% if asignaturas %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:180px">Asignatura</th>
+                <th>Horas por curso</th>
+                <th class="text-end" style="width:90px">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for asig in asignaturas %}
+              <tr>
+                <td class="align-middle">
+                  <span class="badge rounded-pill px-3 py-2 fw-semibold" style="background:{{ asig.color }}; font-size:.85rem;">
+                    {{ asig.nombre }}
+                  </span>
+                </td>
+                <td class="align-middle">
+                  {# Requisitos existentes como chips #}
+                  {% set reqs = {} %}
+                  {% for cr in asig.curso_requisitos %}
+                    {% if reqs.update({cr.curso_id: cr}) %}{% endif %}
+                  {% endfor %}
+
+                  <div class="d-flex flex-wrap gap-2 align-items-center">
+                    {% for curso in cursos %}
+                      {% set req = asig.curso_requisitos | selectattr('curso_id', 'equalto', curso.id) | list | first %}
+                      {% if req %}
+                        <span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1">
+                          {{ curso.nombre }}: {{ req.horas_semanales }}h
+                          <form method="post" action="{{ url_for('guardar_requisito_hc') }}" class="d-inline m-0">
+                            <input type="hidden" name="curso_id" value="{{ curso.id }}">
+                            <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
+                            <input type="hidden" name="accion" value="eliminar">
+                            <button type="submit" class="btn btn-link p-0 text-danger" style="font-size:.75rem; line-height:1;" title="Quitar">
+                              <i class="bi bi-x-lg"></i>
+                            </button>
+                          </form>
+                        </span>
+                      {% endif %}
+                    {% endfor %}
+
+                    {# Formulario para añadir horas a un curso #}
+                    <div class="dropdown">
+                      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-plus"></i> Añadir curso
+                      </button>
+                      <div class="dropdown-menu p-3" style="min-width:220px;">
+                        <form method="post" action="{{ url_for('guardar_requisito_hc') }}">
+                          <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
+                          <input type="hidden" name="accion" value="guardar">
+                          <div class="mb-2">
+                            <label class="form-label small mb-1">Curso</label>
+                            <select name="curso_id" class="form-select form-select-sm" required>
+                              <option value="">Seleccionar…</option>
+                              {% for curso in cursos %}
+                                <option value="{{ curso.id }}">{{ curso.nombre }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                          <div class="mb-2">
+                            <label class="form-label small mb-1">Horas/semana</label>
+                            <input type="number" name="horas" class="form-control form-control-sm" value="1" min="1" max="10">
+                          </div>
+                          <button type="submit" class="btn btn-primary btn-sm w-100">Guardar</button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="align-middle text-end">
+                  <form method="post" action="{{ url_for('eliminar_asignatura_hc', id=asig.id) }}"
+                        onsubmit="return confirm('¿Eliminar la asignatura «{{ asig.nombre }}»? Se borrarán todos sus requisitos y asignaciones.')">
+                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <div class="text-center text-muted py-5">
+            <i class="bi bi-book display-4 d-block mb-2"></i>
+            No hay asignaturas todavía. Crea la primera.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endif %}
+
+
+{# ══════════════════ TAB PROFESORES ══════════════════ #}
+{% if tab == 'profesores' %}
+{% if not asignaturas %}
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-1"></i>
+    Primero crea algunas asignaturas en la pestaña <strong>Asignaturas</strong>.
+  </div>
+{% endif %}
+
+<div class="row g-3">
+  {% for prof in profesores %}
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <form method="post" action="{{ url_for('config_profesor_hc', prof_id=prof.id) }}">
+          <div class="row align-items-start g-3">
+            <div class="col-md-3">
+              <div class="fw-semibold fs-6 mb-1">
+                <i class="bi bi-person-circle me-1 text-primary"></i>{{ prof.nombre }}
+              </div>
+              {% if prof.etapa %}
+                <small class="text-muted">{{ prof.etapa }}</small><br>
+              {% endif %}
+              <small class="text-muted">
+                <i class="bi bi-clock me-1"></i>
+                <span class="fw-semibold text-{% if prof_horas_asig[prof.id] > (prof.horas_max_semanales or 25) %}danger{% else %}success{% endif %}">
+                  {{ prof_horas_asig[prof.id] }}
+                </span>
+                / {{ prof.horas_max_semanales or 25 }} h asignadas
+              </small>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small mb-1">Horas máx/semana</label>
+              <input type="number" name="horas_max" class="form-control form-control-sm"
+                     value="{{ prof.horas_max_semanales or 25 }}" min="1" max="40">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small mb-1">Asignaturas que puede impartir</label>
+              {% if asignaturas %}
+              <div class="d-flex flex-wrap gap-2">
+                {% for asig in asignaturas %}
+                <div class="form-check form-check-inline m-0">
+                  <input class="form-check-input" type="checkbox" name="asignaturas"
+                         id="pa_{{ prof.id }}_{{ asig.id }}" value="{{ asig.id }}"
+                         {% if asig.id in prof_asignaturas[prof.id] %}checked{% endif %}>
+                  <label class="form-check-label" for="pa_{{ prof.id }}_{{ asig.id }}">
+                    <span class="badge rounded-pill px-2" style="background:{{ asig.color }}; font-size:.8rem;">{{ asig.nombre }}</span>
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+                <span class="text-muted small">Sin asignaturas definidas.</span>
+              {% endif %}
+            </div>
+            <div class="col-md-1 d-flex align-items-end justify-content-end">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-floppy me-1"></i>Guardar
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="alert alert-warning">
+      <i class="bi bi-exclamation-triangle me-1"></i>No hay profesores activos.
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+
+{# ══════════════════ TAB HORARIO ══════════════════ #}
+{% if tab == 'horario' %}
+
+{# — Barra de acciones — #}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-4">
+  {# Selector de curso #}
+  <form method="get" action="{{ url_for('horarios_construccion') }}" class="d-flex align-items-center gap-2 me-3">
+    <input type="hidden" name="tab" value="horario">
+    <label class="fw-semibold me-1 mb-0">Curso:</label>
+    <select name="curso_id" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+      {% for c in cursos %}
+        <option value="{{ c.id }}" {% if curso_sel and c.id == curso_sel.id %}selected{% endif %}>{{ c.nombre }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  {# Generar horario #}
+  <form method="post" action="{{ url_for('generar_horario_hc') }}"
+        onsubmit="return confirm('¿Generar horario automático? Se borrará el actual.')">
+    <button type="submit" class="btn btn-success btn-sm">
+      <i class="bi bi-magic me-1"></i>Generar automático
+    </button>
+  </form>
+
+  {# Limpiar horario #}
+  <form method="post" action="{{ url_for('limpiar_horario_hc') }}"
+        onsubmit="return confirm('¿Borrar todo el horario?')">
+    <button type="submit" class="btn btn-outline-danger btn-sm">
+      <i class="bi bi-trash me-1"></i>Limpiar
+    </button>
+  </form>
+</div>
+
+{% if not cursos %}
+  <div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-1"></i>No hay cursos. Crea cursos primero en <strong>Tutorías</strong>.
+  </div>
+{% elif curso_sel %}
+
+{# — Tabla del horario — #}
+<div class="card mb-4">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-table me-1"></i>Horario de <strong>{{ curso_sel.nombre }}</strong>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-bordered mb-0 text-center" style="min-width:700px;">
+        <thead class="table-light">
+          <tr>
+            <th style="width:110px">Franja</th>
+            {% for dia in dias %}
+              <th>{{ dia }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for franja in franjas %}
+          <tr {% if franja == 'Patio' %}class="table-secondary"{% endif %}>
+            <td class="fw-semibold small align-middle {% if franja == 'Patio' %}text-muted{% endif %}">{{ franja }}</td>
+            {% if franja == 'Patio' %}
+              <td colspan="{{ dias|length }}" class="text-muted fst-italic align-middle">— Patio —</td>
+            {% else %}
+              {% for dia in dias %}
+              <td class="align-middle p-1" style="min-width:130px;">
+                {% set asig = horario_grid.get((dia, franja)) %}
+                {% if asig %}
+                  <div class="d-flex flex-column align-items-center gap-1">
+                    <span class="badge rounded-pill px-2 py-1 w-100 text-truncate" style="background:{{ asig.asignatura.color }}; font-size:.8rem; max-width:120px;">
+                      {{ asig.asignatura.nombre }}
+                    </span>
+                    <small class="text-muted" style="font-size:.72rem;">{{ asig.profesor.nombre.split()[0] }} {{ asig.profesor.nombre.split()[-1] }}</small>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2"
+                            style="font-size:.72rem;"
+                            data-bs-toggle="modal" data-bs-target="#modalFranja"
+                            data-curso="{{ curso_sel.id }}"
+                            data-dia="{{ dia }}"
+                            data-franja="{{ franja }}"
+                            data-asignatura="{{ asig.asignatura_id }}"
+                            data-profesor="{{ asig.profesor_id }}">
+                      <i class="bi bi-pencil"></i> Editar
+                    </button>
+                  </div>
+                {% else %}
+                  <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2"
+                          style="font-size:.8rem;"
+                          data-bs-toggle="modal" data-bs-target="#modalFranja"
+                          data-curso="{{ curso_sel.id }}"
+                          data-dia="{{ dia }}"
+                          data-franja="{{ franja }}"
+                          data-asignatura=""
+                          data-profesor="">
+                    <i class="bi bi-plus-lg"></i>
+                  </button>
+                {% endif %}
+              </td>
+              {% endfor %}
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# — Resumen horas por profesor — #}
+{% if profesores %}
+<div class="card">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-bar-chart me-1"></i>Resumen de horas asignadas
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Profesor</th>
+            <th class="text-center">Horas asignadas</th>
+            <th class="text-center">Máximo</th>
+            <th>Carga</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for prof in profesores %}
+          {% set horas = prof_horas_asig[prof.id] %}
+          {% set maximo = prof.horas_max_semanales or 25 %}
+          {% set pct = [(horas / maximo * 100)|int, 100]|min if maximo > 0 else 0 %}
+          <tr>
+            <td class="align-middle">{{ prof.nombre }}</td>
+            <td class="text-center align-middle fw-bold {% if horas > maximo %}text-danger{% elif horas == 0 %}text-muted{% else %}text-success{% endif %}">
+              {{ horas }}
+            </td>
+            <td class="text-center align-middle text-muted">{{ maximo }}</td>
+            <td class="align-middle" style="min-width:150px;">
+              <div class="progress" style="height:8px;">
+                <div class="progress-bar {% if horas > maximo %}bg-danger{% elif pct >= 80 %}bg-warning{% else %}bg-success{% endif %}"
+                     style="width:{{ pct }}%;"></div>
+              </div>
+              <small class="text-muted">{{ pct }}%</small>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endif %} {# fin curso_sel #}
+
+
+{# ── Modal asignar/editar franja ── #}
+<div class="modal fade" id="modalFranja" tabindex="-1" aria-labelledby="modalFranjaLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('asignar_franja_hc') }}">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalFranjaLabel">
+            <i class="bi bi-pencil-square me-1"></i>Asignar franja
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="curso_id" id="modal_curso_id">
+          <input type="hidden" name="dia" id="modal_dia">
+          <input type="hidden" name="franja" id="modal_franja">
+
+          <p class="text-muted mb-3">
+            <i class="bi bi-calendar3 me-1"></i>
+            <strong id="modal_dia_texto"></strong> —
+            <strong id="modal_franja_texto"></strong>
+          </p>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Asignatura</label>
+            <select name="asignatura_id" id="modal_asignatura" class="form-select">
+              <option value="">— Sin asignación —</option>
+              {% for asig in asignaturas %}
+                <option value="{{ asig.id }}" data-color="{{ asig.color }}">{{ asig.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Profesor</label>
+            <select name="profesor_id" id="modal_profesor" class="form-select">
+              <option value="">— Sin asignar —</option>
+              {% for prof in profesores %}
+                <option value="{{ prof.id }}">{{ prof.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-floppy me-1"></i>Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endif %} {# fin tab horario #}
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+(function () {
+  var modalEl = document.getElementById('modalFranja');
+  if (!modalEl) return;
+
+  modalEl.addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    if (!btn) return;
+
+    var curso    = btn.getAttribute('data-curso')    || '';
+    var dia      = btn.getAttribute('data-dia')      || '';
+    var franja   = btn.getAttribute('data-franja')   || '';
+    var asigId   = btn.getAttribute('data-asignatura') || '';
+    var profId   = btn.getAttribute('data-profesor') || '';
+
+    document.getElementById('modal_curso_id').value    = curso;
+    document.getElementById('modal_dia').value         = dia;
+    document.getElementById('modal_franja').value      = franja;
+    document.getElementById('modal_dia_texto').textContent    = dia;
+    document.getElementById('modal_franja_texto').textContent = franja;
+
+    var selAsig = document.getElementById('modal_asignatura');
+    selAsig.value = asigId;
+
+    var selProf = document.getElementById('modal_profesor');
+    selProf.value = profId;
+  });
+})();
+</script>
+{% endblock %}
