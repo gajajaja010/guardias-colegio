@@ -216,6 +216,20 @@ class HorarioAsignacion(db.Model):
     profesor = db.relationship('Profesor')
 
 
+class ReglaHorario(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    # 'max_dia': máximo N horas de la asignatura por día por curso
+    # 'consecutivas': las N horas de la asignatura deben ir seguidas
+    # 'fijar_franja': asignatura siempre en ese día+franja (todos los cursos)
+    # 'tutor_primera': intentar que el tutor imparta a primera hora en su curso
+    tipo = db.Column(db.String(30), nullable=False)
+    asignatura_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=True)
+    valor = db.Column(db.Integer, default=1)
+    dia = db.Column(db.String(20))
+    franja = db.Column(db.String(30))
+    asignatura = db.relationship('Asignatura', backref='reglas')
+
+
 class ConfiguracionEmail(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     mail_server = db.Column(db.String(100), default='smtp.gmail.com')
@@ -1215,15 +1229,31 @@ def generar_horario_automatico():
     HorarioAsignacion.query.delete()
     db.session.flush()
 
-    # Load course info (etapa + aula_cerrada)
     cursos_map = {c.id: c for c in Curso.query.all()}
     asig_map = {a.id: a for a in Asignatura.query.all()}
+    profesores_activos = Profesor.query.filter_by(activo=True).all()
+
+    # Cargar reglas
+    reglas_max_dia = {}      # asig_id -> max horas por día por curso
+    reglas_consecutivas = {} # asig_id -> n horas consecutivas requeridas
+    reglas_fijar = {}        # asig_id -> (dia, franja)
+    regla_tutor_primera = False
+
+    for r in ReglaHorario.query.all():
+        if r.tipo == 'max_dia' and r.asignatura_id:
+            reglas_max_dia[r.asignatura_id] = r.valor
+        elif r.tipo == 'consecutivas' and r.asignatura_id:
+            reglas_consecutivas[r.asignatura_id] = r.valor
+        elif r.tipo == 'fijar_franja' and r.asignatura_id and r.dia and r.franja:
+            reglas_fijar[r.asignatura_id] = (r.dia, r.franja)
+        elif r.tipo == 'tutor_primera':
+            regla_tutor_primera = True
 
     tasks = []
     for req in CursoAsignatura.query.all():
         curso = cursos_map.get(req.curso_id)
         if curso and curso.aula_cerrada:
-            continue  # aula cerrada: tutoras siempre presentes, no hay sustituciones externas
+            continue
         for _ in range(req.horas_semanales):
             tasks.append((req.curso_id, req.asignatura_id))
 
@@ -1231,62 +1261,125 @@ def generar_horario_automatico():
     for pa in ProfesorAsignatura.query.all():
         prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
 
-    # etapa compatibility: professor etapa must match subject etapa (if set)
-    prof_etapa = {p.id: p.etapa for p in Profesor.query.filter_by(activo=True).all()}
+    prof_etapa = {p.id: p.etapa for p in profesores_activos}
+    prof_tutoria = {p.aula_tutoria: p.id for p in profesores_activos if p.aula_tutoria}
+    curso_nombre = {c.id: c.nombre for c in cursos_map.values()}
 
     def etapa_compatible(prof_id, asig_id):
         asig = asig_map.get(asig_id)
         if not asig or not asig.etapa:
-            return True  # no restriction
+            return True
         return prof_etapa.get(prof_id) == asig.etapa
 
-    tasks.sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
-
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
-    slots = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
+    primera_franja = franjas_clase[0] if franjas_clase else None
 
     profesor_ocupado = defaultdict(set)
     curso_ocupado = defaultdict(set)
     profesor_horas = defaultdict(int)
-    prof_max = {p.id: p.horas_max_semanales or 25
-                for p in Profesor.query.filter_by(activo=True).all()}
+    asig_dia_count = defaultdict(int)  # (curso_id, asig_id, dia) -> count
+    prof_max = {p.id: p.horas_max_semanales or 25 for p in profesores_activos}
 
     sin_asignar = []
 
-    for curso_id, asig_id in tasks:
-        profesores = [pid for pid in prof_por_asig.get(asig_id, [])
-                      if etapa_compatible(pid, asig_id)]
-        if not profesores:
-            sin_asignar.append((curso_id, asig_id))
+    def do_assign(curso_id, asig_id, dia, franja, prof_id):
+        slot = (dia, franja)
+        db.session.add(HorarioAsignacion(
+            curso_id=curso_id, asignatura_id=asig_id,
+            profesor_id=prof_id, dia=dia, franja=franja
+        ))
+        profesor_ocupado[prof_id].add(slot)
+        curso_ocupado[curso_id].add(slot)
+        profesor_horas[prof_id] += 1
+        asig_dia_count[(curso_id, asig_id, dia)] += 1
+
+    def candidatos(curso_id, asig_id, dia, franja):
+        slot = (dia, franja)
+        if slot in curso_ocupado[curso_id]:
+            return []
+        max_d = reglas_max_dia.get(asig_id)
+        if max_d and asig_dia_count[(curso_id, asig_id, dia)] >= max_d:
+            return []
+        cands = [pid for pid in prof_por_asig.get(asig_id, [])
+                 if etapa_compatible(pid, asig_id)
+                 and slot not in profesor_ocupado[pid]
+                 and profesor_horas[pid] < prof_max.get(pid, 25)]
+        if regla_tutor_primera and franja == primera_franja:
+            nombre_curso = curso_nombre.get(curso_id, '')
+            tutor_id = prof_tutoria.get(nombre_curso)
+            if tutor_id and tutor_id in cands:
+                cands = [tutor_id] + [p for p in cands if p != tutor_id]
+            else:
+                random.shuffle(cands)
+        else:
+            random.shuffle(cands)
+        return cands
+
+    # Paso 1: fijar_franja (reglas duras, primero)
+    fixed_indices = set()
+    for idx, (curso_id, asig_id) in enumerate(tasks):
+        if asig_id not in reglas_fijar:
             continue
+        dia, franja = reglas_fijar[asig_id]
+        cands = candidatos(curso_id, asig_id, dia, franja)
+        if cands:
+            do_assign(curso_id, asig_id, dia, franja, cands[0])
+            fixed_indices.add(idx)
 
-        asignado = False
-        slots_s = slots[:]
+    # Paso 2: consecutivas
+    remaining = [(i, t) for i, t in enumerate(tasks) if i not in fixed_indices]
+    consec_groups = defaultdict(list)
+    normal_tasks = []
+    for idx, (curso_id, asig_id) in remaining:
+        if asig_id in reglas_consecutivas:
+            consec_groups[(curso_id, asig_id)].append(idx)
+        else:
+            normal_tasks.append((curso_id, asig_id))
+
+    for (curso_id, asig_id), indices in consec_groups.items():
+        n = len(indices)
+        colocados = 0
+        dias_s = DIAS_SEMANA[:]
+        random.shuffle(dias_s)
+        for dia in dias_s:
+            if colocados >= n:
+                break
+            for start in range(len(franjas_clase) - n + 1):
+                seq = [(dia, franjas_clase[start + k]) for k in range(n)]
+                if any(s in curso_ocupado[curso_id] for s in seq):
+                    continue
+                max_d = reglas_max_dia.get(asig_id)
+                if max_d and asig_dia_count[(curso_id, asig_id, dia)] + n > max_d:
+                    continue
+                common = [pid for pid in prof_por_asig.get(asig_id, [])
+                          if etapa_compatible(pid, asig_id)
+                          and all(s not in profesor_ocupado[pid] for s in seq)
+                          and profesor_horas[pid] + n <= prof_max.get(pid, 25)]
+                if not common:
+                    continue
+                random.shuffle(common)
+                prof_id = common[0]
+                for dia_s, franja_s in seq:
+                    do_assign(curso_id, asig_id, dia_s, franja_s, prof_id)
+                colocados += n
+                break
+        for _ in range(n - colocados):
+            sin_asignar.append((curso_id, asig_id))
+
+    # Paso 3: tareas normales
+    normal_tasks.sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
+    slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
+
+    for curso_id, asig_id in normal_tasks:
+        slots_s = slots_all[:]
         random.shuffle(slots_s)
-
+        asignado = False
         for dia, franja in slots_s:
-            slot = (dia, franja)
-            if slot in curso_ocupado[curso_id]:
-                continue
-            profs_s = profesores[:]
-            random.shuffle(profs_s)
-            for prof_id in profs_s:
-                if slot in profesor_ocupado[prof_id]:
-                    continue
-                if profesor_horas[prof_id] >= prof_max.get(prof_id, 25):
-                    continue
-                db.session.add(HorarioAsignacion(
-                    curso_id=curso_id, asignatura_id=asig_id,
-                    profesor_id=prof_id, dia=dia, franja=franja
-                ))
-                profesor_ocupado[prof_id].add(slot)
-                curso_ocupado[curso_id].add(slot)
-                profesor_horas[prof_id] += 1
+            cands = candidatos(curso_id, asig_id, dia, franja)
+            if cands:
+                do_assign(curso_id, asig_id, dia, franja, cands[0])
                 asignado = True
                 break
-            if asignado:
-                break
-
         if not asignado:
             sin_asignar.append((curso_id, asig_id))
 
@@ -1330,12 +1423,16 @@ def horarios_construccion():
         for p in profesores_lista
     }
 
+    reglas = ReglaHorario.query.all()
+    franjas_clase = [f for f in FRANJAS if f != 'Patio']
+
     return render_template('horarios_construccion.html',
         tab=tab, asignaturas=asignaturas, cursos=cursos,
         profesores=profesores_lista, curso_sel=curso_sel,
         horario_grid=horario_grid, prof_asignaturas=prof_asignaturas,
         prof_horas_asig=prof_horas_asig, prof_especialidades=prof_especialidades,
-        etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS)
+        etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS, franjas_clase=franjas_clase,
+        reglas=reglas)
 
 
 @app.route('/horarios-construccion/asignatura/nueva', methods=['POST'])
@@ -1512,6 +1609,53 @@ def limpiar_horario_hc():
     db.session.commit()
     flash('Horario borrado.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario'))
+
+
+# ───────────────────────────── REGLAS HORARIO ─────────────────────────────
+
+@app.route('/horarios-construccion/reglas/add', methods=['POST'])
+@login_required
+def add_regla_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    tipo = request.form.get('tipo', '').strip()
+    asig_id = request.form.get('asignatura_id', '') or None
+    if asig_id:
+        asig_id = int(asig_id)
+    valor = request.form.get('valor', 1, type=int) or 1
+    dia = request.form.get('dia', '').strip() or None
+    franja = request.form.get('franja', '').strip() or None
+
+    if not tipo:
+        flash('Tipo de regla requerido.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+
+    if tipo in ('max_dia', 'consecutivas') and not asig_id:
+        flash('Selecciona una asignatura para esta regla.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+
+    if tipo == 'fijar_franja' and (not asig_id or not dia or not franja):
+        flash('Selecciona asignatura, día y franja para esta regla.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+
+    db.session.add(ReglaHorario(
+        tipo=tipo, asignatura_id=asig_id, valor=valor, dia=dia, franja=franja
+    ))
+    db.session.commit()
+    flash('Regla añadida.', 'success')
+    return redirect(url_for('horarios_construccion', tab='reglas'))
+
+
+@app.route('/horarios-construccion/reglas/<int:regla_id>/delete', methods=['POST'])
+@login_required
+def delete_regla_hc(regla_id):
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    regla = ReglaHorario.query.get_or_404(regla_id)
+    db.session.delete(regla)
+    db.session.commit()
+    flash('Regla eliminada.', 'success')
+    return redirect(url_for('horarios_construccion', tab='reglas'))
 
 
 # ───────────────────────────── IA HORARIO ─────────────────────────────
