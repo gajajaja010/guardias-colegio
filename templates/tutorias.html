@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Tutorías{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-mortarboard me-2"></i>Tutorías</h4>
+</div>
+
+<div class="row g-4">
+  <!-- Lista de cursos -->
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span>Cursos y tutores asignados</span>
+        <span class="badge bg-secondary">{{ cursos|length }} cursos</span>
+      </div>
+      <div class="card-body p-0">
+        {% if cursos %}
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Curso</th>
+              <th>Tutor/a asignado/a</th>
+              <th style="width:180px">Cambiar tutor</th>
+              <th style="width:60px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in cursos %}
+            <tr>
+              <td class="align-middle fw-semibold">{{ c.nombre }}</td>
+              <td class="align-middle">
+                {% if tutores[c.nombre] %}
+                <span class="badge bg-success">{{ tutores[c.nombre].nombre }}</span>
+                {% else %}
+                <span class="text-muted small">Sin tutor</span>
+                {% endif %}
+              </td>
+              <td class="align-middle">
+                <form method="POST" class="d-flex gap-1">
+                  <input type="hidden" name="accion" value="assign_tutor">
+                  <input type="hidden" name="curso_id" value="{{ c.id }}">
+                  <select name="profesor_id" class="form-select form-select-sm">
+                    <option value="">— Sin tutor —</option>
+                    {% for p in profesores %}
+                    <option value="{{ p.id }}"
+                      {{ 'selected' if tutores[c.nombre] and tutores[c.nombre].id == p.id }}>
+                      {{ p.nombre }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn-sm btn-outline-primary" title="Guardar">
+                    <i class="bi bi-check-lg"></i>
+                  </button>
+                </form>
+              </td>
+              <td class="align-middle text-end">
+                <form method="POST" onsubmit="return confirm('¿Eliminar el curso {{ c.nombre }}?')">
+                  <input type="hidden" name="accion" value="delete_curso">
+                  <input type="hidden" name="curso_id" value="{{ c.id }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar curso">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-mortarboard display-4"></i>
+          <p class="mt-2">No hay cursos definidos todavía.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Añadir curso -->
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header bg-white">Añadir curso</div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="accion" value="add_curso">
+          <div class="mb-3">
+            <label class="form-label">Nombre del curso</label>
+            <input type="text" name="nombre" class="form-control"
+              placeholder="Ej: 1ºA, 3ºB, Infantil 4 años..." required>
+          </div>
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-plus-lg me-1"></i>Añadir curso
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-body text-muted small">
+        <p class="mb-1"><i class="bi bi-info-circle me-1"></i><strong>¿Para qué sirven los cursos?</strong></p>
+        <ul class="ps-3 mb-0">
+          <li>El tutor de un curso tiene prioridad para cubrir guardias en su clase.</li>
+          <li>Al editar un profesor puedes asignarle un aula de tutoría desde la lista de cursos.</li>
+          <li>También puedes marcar qué clases no puede cubrir.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

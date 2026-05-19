@@ -161,6 +161,12 @@ class Guardia(db.Model):
     profesor_ausente = db.relationship('Profesor', foreign_keys=[profesor_ausente_id])
 
 
+class Curso(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(50), unique=True, nullable=False)
+    orden = db.Column(db.Integer, default=0)
+
+
 class ConfiguracionEmail(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     mail_server = db.Column(db.String(100), default='smtp.gmail.com')
@@ -390,9 +396,9 @@ def nuevo_profesor():
         email = request.form.get('email', '').strip().lower()
         if Profesor.query.filter_by(email=email).first():
             flash('Ya existe un profesor con ese email.', 'danger')
-            return render_template('form_profesor.html', profesor=None)
-        raw = request.form.get('aulas_bloqueadas_raw', '')
-        aulas_bloqueadas = json.dumps([a.strip() for a in raw.split(',') if a.strip()])
+            cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
+            return render_template('form_profesor.html', profesor=None, cursos=cursos)
+        aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
         p = Profesor(
             nombre=request.form.get('nombre', '').strip(),
             email=email,
@@ -413,7 +419,8 @@ def nuevo_profesor():
         else:
             flash(f'Profesor {p.nombre} añadido. Configura el email para enviarle la invitación, o usa "Reenviar invitación" más adelante.', 'warning')
         return redirect(url_for('profesores'))
-    return render_template('form_profesor.html', profesor=None)
+    cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
+    return render_template('form_profesor.html', profesor=None, cursos=cursos)
 
 
 @app.route('/profesores/<int:id>/enlace-invitacion')
@@ -486,8 +493,7 @@ def editar_profesor(id):
         p.nombre = request.form.get('nombre', '').strip()
         p.etapa = request.form.get('etapa', '').strip() or None
         p.aula_tutoria = request.form.get('aula_tutoria', '').strip() or None
-        raw = request.form.get('aulas_bloqueadas_raw', '')
-        p.aulas_bloqueadas = json.dumps([a.strip() for a in raw.split(',') if a.strip()])
+        p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
         if current_user.es_admin:
             p.es_admin = bool(request.form.get('es_admin'))
             p.es_especialista = bool(request.form.get('es_especialista'))
@@ -497,7 +503,8 @@ def editar_profesor(id):
         db.session.commit()
         flash('Perfil actualizado.', 'success')
         return redirect(url_for('profesores'))
-    return render_template('form_profesor.html', profesor=p)
+    cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
+    return render_template('form_profesor.html', profesor=p, cursos=cursos)
 
 
 @app.route('/profesores/<int:id>/baja', methods=['POST'])
@@ -1075,6 +1082,63 @@ def cambiar_modo():
     modo_texto = 'Automático' if cfg.modo_guardias == 'automatico' else 'Manual'
     flash(f'Modo cambiado a: {modo_texto}.', 'success')
     return redirect(url_for('configuracion'))
+
+
+# ───────────────────────────── TUTORÍAS ─────────────────────────────
+
+@app.route('/tutorias', methods=['GET', 'POST'])
+@login_required
+def tutorias():
+    if not current_user.es_admin:
+        flash('Solo administradores.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        accion = request.form.get('accion')
+
+        if accion == 'add_curso':
+            nombre = request.form.get('nombre', '').strip()
+            if nombre:
+                if not Curso.query.filter_by(nombre=nombre).first():
+                    orden = Curso.query.count()
+                    db.session.add(Curso(nombre=nombre, orden=orden))
+                    db.session.commit()
+                    flash(f'Curso "{nombre}" añadido.', 'success')
+                else:
+                    flash(f'El curso "{nombre}" ya existe.', 'warning')
+
+        elif accion == 'delete_curso':
+            curso_id = int(request.form.get('curso_id', 0))
+            curso = Curso.query.get_or_404(curso_id)
+            # Desasignar tutores que tenían este curso
+            Profesor.query.filter_by(aula_tutoria=curso.nombre).update({'aula_tutoria': None})
+            db.session.delete(curso)
+            db.session.commit()
+            flash(f'Curso eliminado.', 'success')
+
+        elif accion == 'assign_tutor':
+            curso_id = int(request.form.get('curso_id', 0))
+            profesor_id = request.form.get('profesor_id', '')
+            curso = Curso.query.get_or_404(curso_id)
+            # Quitar a quien tenía este curso antes
+            Profesor.query.filter_by(aula_tutoria=curso.nombre).update({'aula_tutoria': None})
+            if profesor_id:
+                p = Profesor.query.get_or_404(int(profesor_id))
+                p.aula_tutoria = curso.nombre
+            db.session.commit()
+            flash('Tutor actualizado.', 'success')
+
+        return redirect(url_for('tutorias'))
+
+    cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
+    profesores_lista = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
+    # Mapear curso -> tutor
+    tutores = {
+        c.nombre: Profesor.query.filter_by(aula_tutoria=c.nombre).first()
+        for c in cursos
+    }
+    return render_template('tutorias.html',
+        cursos=cursos, profesores=profesores_lista, tutores=tutores)
 
 
 # ───────────────────────────── INIT DB ─────────────────────────────

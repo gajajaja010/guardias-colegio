@@ -46,17 +46,39 @@
             </div>
             <div class="col-md-6 mb-3">
               <label class="form-label">Aula de tutoría</label>
-              <input type="text" name="aula_tutoria" class="form-control"
-                value="{{ profesor.aula_tutoria if profesor else '' }}"
-                placeholder="Ej: 3ºA, 1ºB...">
+              <select name="aula_tutoria" class="form-select">
+                <option value="">Sin asignar</option>
+                {% for c in cursos %}
+                <option value="{{ c.nombre }}"
+                  {{ 'selected' if profesor and profesor.aula_tutoria == c.nombre }}>
+                  {{ c.nombre }}
+                </option>
+                {% endfor %}
+              </select>
+              {% if not cursos %}
+              <div class="form-text text-muted">No hay cursos definidos. Añádelos en <a href="{{ url_for('tutorias') }}">Tutorías</a>.</div>
+              {% endif %}
             </div>
           </div>
 
           <div class="mb-3">
             <label class="form-label">Clases donde <strong>no</strong> puede hacer guardia</label>
-            <input type="text" name="aulas_bloqueadas_raw" class="form-control"
-              value="{{ profesor.aulas_bloqueadas | from_json | join(', ') if profesor else '' }}"
-              placeholder="Ej: 2ºA, 3ºB (separadas por comas)">
+            {% if cursos %}
+            {% set bloqueadas = profesor.aulas_bloqueadas | from_json if profesor else [] %}
+            <div class="border rounded p-2" style="max-height:180px; overflow-y:auto;">
+              {% for c in cursos %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                  name="aulas_bloqueadas" value="{{ c.nombre }}"
+                  id="bloqueo_{{ loop.index }}"
+                  {{ 'checked' if c.nombre in bloqueadas }}>
+                <label class="form-check-label" for="bloqueo_{{ loop.index }}">{{ c.nombre }}</label>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="form-text text-muted">No hay cursos definidos. Añádelos en <a href="{{ url_for('tutorias') }}">Tutorías</a>.</div>
+            {% endif %}
             <div class="form-text">El sistema nunca le asignará guardias en estas clases.</div>
           </div>
 
