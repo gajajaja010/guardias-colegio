@@ -218,16 +218,25 @@ class HorarioAsignacion(db.Model):
 
 class ReglaHorario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    # 'max_dia': máximo N horas de la asignatura por día por curso
-    # 'consecutivas': las N horas de la asignatura deben ir seguidas
-    # 'fijar_franja': asignatura siempre en ese día+franja (todos los cursos)
-    # 'tutor_primera': intentar que el tutor imparta a primera hora en su curso
+    # Reglas de asignatura:
+    #   'max_dia', 'consecutivas', 'fijar_franja', 'tutor_primera'
+    # Reglas de profesor (dureza 'dura' o 'blanda'):
+    #   'prof_excluir_curso', 'prof_fijar_curso',
+    #   'prof_excluir_franja', 'prof_fijar_asignatura',
+    #   'prof_evitar_curso',  'prof_preferir_curso',
+    #   'prof_evitar_franja', 'prof_preferir_asignatura',
+    #   'prof_horas_guardia'  (horas de guardia mínimas/máximas)
     tipo = db.Column(db.String(30), nullable=False)
+    dureza = db.Column(db.String(10), default='dura')  # 'dura' | 'blanda'
     asignatura_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=True)
+    profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=True)
+    curso_id_regla = db.Column(db.Integer, db.ForeignKey('curso.id'), nullable=True)
     valor = db.Column(db.Integer, default=1)
     dia = db.Column(db.String(20))
     franja = db.Column(db.String(30))
     asignatura = db.relationship('Asignatura', backref='reglas')
+    profesor_regla = db.relationship('Profesor', backref='reglas_horario', foreign_keys=[profesor_id])
+    curso_regla = db.relationship('Curso', backref='reglas_horario', foreign_keys=[curso_id_regla])
 
 
 class ConfiguracionEmail(db.Model):
@@ -1233,11 +1242,23 @@ def generar_horario_automatico():
     asig_map = {a.id: a for a in Asignatura.query.all()}
     profesores_activos = Profesor.query.filter_by(activo=True).all()
 
-    # Cargar reglas
-    reglas_max_dia = {}      # asig_id -> max horas por día por curso
-    reglas_consecutivas = {} # asig_id -> n horas consecutivas requeridas
-    reglas_fijar = {}        # asig_id -> (dia, franja)
+    # Cargar reglas de asignatura
+    reglas_max_dia = {}
+    reglas_consecutivas = {}
+    reglas_fijar = {}
     regla_tutor_primera = False
+
+    # Cargar reglas de profesor
+    rp_excluir_curso = defaultdict(set)       # curso_id -> profs excluidos (dura)
+    rp_fijar_curso = defaultdict(set)         # curso_id -> profs forzados (dura)
+    rp_excluir_franja = defaultdict(set)      # (dia,franja) -> profs excluidos (dura)
+    rp_fijar_asignatura = defaultdict(set)    # asig_id -> profs forzados (dura)
+    rp_evitar_curso = defaultdict(set)        # curso_id -> profs a evitar (blanda)
+    rp_preferir_curso = defaultdict(set)      # curso_id -> profs preferidos (blanda)
+    rp_evitar_franja = defaultdict(set)       # (dia,franja) -> profs a evitar (blanda)
+    rp_preferir_asignatura = defaultdict(set) # asig_id -> profs preferidos (blanda)
+    rp_min_horas = {}                         # prof_id -> min horas guardia
+    rp_max_horas = {}                         # prof_id -> max horas guardia
 
     for r in ReglaHorario.query.all():
         if r.tipo == 'max_dia' and r.asignatura_id:
@@ -1248,6 +1269,28 @@ def generar_horario_automatico():
             reglas_fijar[r.asignatura_id] = (r.dia, r.franja)
         elif r.tipo == 'tutor_primera':
             regla_tutor_primera = True
+        elif r.profesor_id:
+            pid = r.profesor_id
+            if r.tipo == 'prof_excluir_curso' and r.curso_id_regla:
+                rp_excluir_curso[r.curso_id_regla].add(pid)
+            elif r.tipo == 'prof_fijar_curso' and r.curso_id_regla:
+                rp_fijar_curso[r.curso_id_regla].add(pid)
+            elif r.tipo == 'prof_excluir_franja' and r.dia and r.franja:
+                rp_excluir_franja[(r.dia, r.franja)].add(pid)
+            elif r.tipo == 'prof_fijar_asignatura' and r.asignatura_id:
+                rp_fijar_asignatura[r.asignatura_id].add(pid)
+            elif r.tipo == 'prof_evitar_curso' and r.curso_id_regla:
+                rp_evitar_curso[r.curso_id_regla].add(pid)
+            elif r.tipo == 'prof_preferir_curso' and r.curso_id_regla:
+                rp_preferir_curso[r.curso_id_regla].add(pid)
+            elif r.tipo == 'prof_evitar_franja' and r.dia and r.franja:
+                rp_evitar_franja[(r.dia, r.franja)].add(pid)
+            elif r.tipo == 'prof_preferir_asignatura' and r.asignatura_id:
+                rp_preferir_asignatura[r.asignatura_id].add(pid)
+            elif r.tipo == 'prof_min_horas':
+                rp_min_horas[pid] = r.valor
+            elif r.tipo == 'prof_max_horas':
+                rp_max_horas[pid] = r.valor
 
     tasks = []
     for req in CursoAsignatura.query.all():
@@ -1279,6 +1322,9 @@ def generar_horario_automatico():
     profesor_horas = defaultdict(int)
     asig_dia_count = defaultdict(int)  # (curso_id, asig_id, dia) -> count
     prof_max = {p.id: p.horas_max_semanales or 25 for p in profesores_activos}
+    # Override max horas from prof rules
+    for pid, mx in rp_max_horas.items():
+        prof_max[pid] = mx
 
     sin_asignar = []
 
@@ -1304,15 +1350,53 @@ def generar_horario_automatico():
                  if etapa_compatible(pid, asig_id)
                  and slot not in profesor_ocupado[pid]
                  and profesor_horas[pid] < prof_max.get(pid, 25)]
+
+        # Reglas duras de profesor
+        excl_c = rp_excluir_curso.get(curso_id, set())
+        excl_f = rp_excluir_franja.get(slot, set())
+        cands = [p for p in cands if p not in excl_c and p not in excl_f]
+
+        # Si hay profs forzados para este curso, restringir a ellos
+        fij_c = rp_fijar_curso.get(curso_id, set())
+        if fij_c:
+            restricted = [p for p in cands if p in fij_c]
+            if restricted:
+                cands = restricted
+
+        # Si hay profs forzados para esta asignatura, restringir a ellos
+        fij_a = rp_fijar_asignatura.get(asig_id, set())
+        if fij_a:
+            restricted = [p for p in cands if p in fij_a]
+            if restricted:
+                cands = restricted
+
+        if not cands:
+            return []
+
+        # Ordenar: preferidos primero, evitados al final
+        pref_c = rp_preferir_curso.get(curso_id, set())
+        evit_c = rp_evitar_curso.get(curso_id, set())
+        pref_a = rp_preferir_asignatura.get(asig_id, set())
+        evit_f = rp_evitar_franja.get(slot, set())
+
+        def sort_key(pid):
+            score = 0
+            if pid in pref_c: score -= 20
+            if pid in pref_a: score -= 15
+            if pid in evit_c: score += 20
+            if pid in evit_f: score += 10
+            return score
+
+        random.shuffle(cands)
+        cands.sort(key=sort_key)
+
+        # Tutor a primera hora (blanda, máxima prioridad si aplica)
         if regla_tutor_primera and franja == primera_franja:
             nombre_curso = curso_nombre.get(curso_id, '')
             tutor_id = prof_tutoria.get(nombre_curso)
             if tutor_id and tutor_id in cands:
                 cands = [tutor_id] + [p for p in cands if p != tutor_id]
-            else:
-                random.shuffle(cands)
-        else:
-            random.shuffle(cands)
+
         return cands
 
     # Paso 1: fijar_franja (reglas duras, primero)
@@ -1354,7 +1438,19 @@ def generar_horario_automatico():
                 common = [pid for pid in prof_por_asig.get(asig_id, [])
                           if etapa_compatible(pid, asig_id)
                           and all(s not in profesor_ocupado[pid] for s in seq)
-                          and profesor_horas[pid] + n <= prof_max.get(pid, 25)]
+                          and profesor_horas[pid] + n <= prof_max.get(pid, 25)
+                          and pid not in rp_excluir_curso.get(curso_id, set())
+                          and all(pid not in rp_excluir_franja.get(s, set()) for s in seq)]
+                fij_c = rp_fijar_curso.get(curso_id, set())
+                if fij_c:
+                    r = [p for p in common if p in fij_c]
+                    if r:
+                        common = r
+                fij_a = rp_fijar_asignatura.get(asig_id, set())
+                if fij_a:
+                    r = [p for p in common if p in fij_a]
+                    if r:
+                        common = r
                 if not common:
                     continue
                 random.shuffle(common)
@@ -1619,15 +1715,45 @@ def add_regla_hc():
     if not current_user.es_admin:
         return redirect(url_for('dashboard'))
     tipo = request.form.get('tipo', '').strip()
+    dureza = request.form.get('dureza', 'dura').strip()
     asig_id = request.form.get('asignatura_id', '') or None
     if asig_id:
         asig_id = int(asig_id)
+    prof_id = request.form.get('profesor_id', '') or None
+    if prof_id:
+        prof_id = int(prof_id)
+    curso_id_r = request.form.get('curso_id_regla', '') or None
+    if curso_id_r:
+        curso_id_r = int(curso_id_r)
     valor = request.form.get('valor', 1, type=int) or 1
     dia = request.form.get('dia', '').strip() or None
     franja = request.form.get('franja', '').strip() or None
 
     if not tipo:
         flash('Tipo de regla requerido.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+
+    TIPOS_PROF = {
+        'prof_excluir_curso', 'prof_fijar_curso', 'prof_evitar_curso', 'prof_preferir_curso',
+        'prof_excluir_franja', 'prof_fijar_asignatura',
+        'prof_evitar_franja', 'prof_preferir_asignatura',
+        'prof_min_horas', 'prof_max_horas',
+    }
+
+    if tipo in TIPOS_PROF and not prof_id:
+        flash('Selecciona un profesor para esta regla.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+
+    if tipo in ('prof_excluir_curso', 'prof_fijar_curso', 'prof_evitar_curso', 'prof_preferir_curso') and not curso_id_r:
+        flash('Selecciona un curso para esta regla.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+
+    if tipo in ('prof_fijar_asignatura', 'prof_preferir_asignatura') and not asig_id:
+        flash('Selecciona una asignatura para esta regla.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+
+    if tipo in ('prof_excluir_franja', 'prof_evitar_franja') and (not dia or not franja):
+        flash('Selecciona día y franja para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
 
     if tipo in ('max_dia', 'consecutivas') and not asig_id:
@@ -1639,7 +1765,10 @@ def add_regla_hc():
         return redirect(url_for('horarios_construccion', tab='reglas'))
 
     db.session.add(ReglaHorario(
-        tipo=tipo, asignatura_id=asig_id, valor=valor, dia=dia, franja=franja
+        tipo=tipo, dureza=dureza,
+        asignatura_id=asig_id, profesor_id=prof_id,
+        curso_id_regla=curso_id_r,
+        valor=valor, dia=dia, franja=franja
     ))
     db.session.commit()
     flash('Regla añadida.', 'success')

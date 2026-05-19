@@ -542,66 +542,134 @@
 {# ══════════════════ TAB REGLAS ══════════════════ #}
 {% if tab == 'reglas' %}
 
-<div class="row g-4">
-  {# Formulario añadir regla #}
+{# ── Formulario nueva regla ── #}
+<div class="row g-4 mb-4">
   <div class="col-md-5">
     <div class="card">
       <div class="card-header bg-white fw-semibold">
         <i class="bi bi-plus-circle me-1"></i>Nueva regla
       </div>
       <div class="card-body">
-        <form method="POST" action="{{ url_for('add_regla_hc') }}" id="formRegla">
+        <form method="POST" action="{{ url_for('add_regla_hc') }}">
+
           <div class="mb-3">
-            <label class="form-label">Tipo de regla</label>
-            <select name="tipo" class="form-select" id="tipoRegla" onchange="updateReglaFields()">
-              <option value="">— Selecciona —</option>
-              <option value="max_dia">Máximo N horas de una asignatura por día</option>
-              <option value="consecutivas">Horas de asignatura en franjas seguidas</option>
-              <option value="fijar_franja">Fijar asignatura a un día y hora concretos</option>
-              <option value="tutor_primera">Intentar poner al tutor a primera hora</option>
-            </select>
+            <label class="form-label fw-semibold">Categoría</label>
+            <div class="btn-group w-100" role="group">
+              <input type="radio" class="btn-check" name="cat_regla" id="catAsig" value="asig" checked onchange="updateReglaFields()">
+              <label class="btn btn-outline-primary btn-sm" for="catAsig"><i class="bi bi-book me-1"></i>Asignatura</label>
+              <input type="radio" class="btn-check" name="cat_regla" id="catProf" value="prof" onchange="updateReglaFields()">
+              <label class="btn btn-outline-secondary btn-sm" for="catProf"><i class="bi bi-person me-1"></i>Profesor</label>
+            </div>
           </div>
 
-          <div id="campoAsig" class="mb-3 d-none">
-            <label class="form-label">Asignatura</label>
-            <select name="asignatura_id" class="form-select">
-              <option value="">— Selecciona —</option>
-              {% for a in asignaturas %}
-              <option value="{{ a.id }}">{{ a.nombre }}</option>
-              {% endfor %}
-            </select>
+          {# — Tipos asignatura — #}
+          <div id="secAsig">
+            <div class="mb-3">
+              <label class="form-label">Tipo</label>
+              <select name="tipo" id="tipoAsig" class="form-select" onchange="updateReglaFields()">
+                <option value="max_dia">Máximo N horas por día</option>
+                <option value="consecutivas">Horas seguidas (robotica, etc.)</option>
+                <option value="fijar_franja">Fijar a un día y hora concretos</option>
+                <option value="tutor_primera">Tutor a primera hora (blanda)</option>
+              </select>
+            </div>
+            <div id="campoAsig" class="mb-3">
+              <label class="form-label">Asignatura</label>
+              <select name="asignatura_id" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for a in asignaturas %}
+                <option value="{{ a.id }}">{{ a.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div id="campoValor" class="mb-3 d-none">
+              <label class="form-label" id="labelValor">Número</label>
+              <input type="number" name="valor" class="form-control" min="1" max="25" value="1">
+            </div>
+            <div id="campoDia" class="mb-3 d-none">
+              <label class="form-label">Día</label>
+              <select name="dia" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for d in dias %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="campoFranja" class="mb-3 d-none">
+              <label class="form-label">Franja</label>
+              <select name="franja" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for f in franjas_clase %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="infoTutor" class="alert alert-info small d-none">
+              <i class="bi bi-info-circle me-1"></i>Preferencia: el tutor imparte a primera hora en su aula.
+            </div>
           </div>
 
-          <div id="campoValor" class="mb-3 d-none">
-            <label class="form-label" id="labelValor">Número</label>
-            <input type="number" name="valor" class="form-control" min="1" max="10" value="1">
+          {# — Tipos profesor — #}
+          <div id="secProf" class="d-none">
+            <div class="mb-3">
+              <label class="form-label">Tipo</label>
+              <select name="tipo" id="tipoProf" class="form-select" onchange="updateReglaFields()">
+                <optgroup label="Reglas duras (se respetan siempre)">
+                  <option value="prof_excluir_curso">Nunca en este curso</option>
+                  <option value="prof_fijar_curso">Sí o sí en este curso</option>
+                  <option value="prof_excluir_franja">Nunca en este día+franja</option>
+                  <option value="prof_fijar_asignatura">Sí o sí imparte esta asignatura</option>
+                  <option value="prof_max_horas">Máximo N horas en el horario</option>
+                  <option value="prof_min_horas">Mínimo N horas en el horario</option>
+                </optgroup>
+                <optgroup label="Reglas blandas (se intentan)">
+                  <option value="prof_evitar_curso">Intentar no poner en este curso</option>
+                  <option value="prof_preferir_curso">Intentar poner en este curso</option>
+                  <option value="prof_evitar_franja">Intentar evitar este día+franja</option>
+                  <option value="prof_preferir_asignatura">Intentar que imparta esta asignatura</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Profesor</label>
+              <select name="profesor_id" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for p in profesores %}
+                <option value="{{ p.id }}">{{ p.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div id="campoCursoProf" class="mb-3 d-none">
+              <label class="form-label">Curso</label>
+              <select name="curso_id_regla" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for c in cursos %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="campoAsigProf" class="mb-3 d-none">
+              <label class="form-label">Asignatura</label>
+              <select name="asignatura_id" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for a in asignaturas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="campoDiaProf" class="mb-3 d-none">
+              <label class="form-label">Día</label>
+              <select name="dia" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for d in dias %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="campoFranjaProf" class="mb-3 d-none">
+              <label class="form-label">Franja</label>
+              <select name="franja" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for f in franjas_clase %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="campoValorProf" class="mb-3 d-none">
+              <label class="form-label" id="labelValorProf">Número de horas</label>
+              <input type="number" name="valor" class="form-control" min="1" max="40" value="1">
+            </div>
           </div>
 
-          <div id="campoDia" class="mb-3 d-none">
-            <label class="form-label">Día</label>
-            <select name="dia" class="form-select">
-              <option value="">— Selecciona —</option>
-              {% for d in dias %}
-              <option value="{{ d }}">{{ d }}</option>
-              {% endfor %}
-            </select>
-          </div>
-
-          <div id="campoFranja" class="mb-3 d-none">
-            <label class="form-label">Franja horaria</label>
-            <select name="franja" class="form-select">
-              <option value="">— Selecciona —</option>
-              {% for f in franjas_clase %}
-              <option value="{{ f }}">{{ f }}</option>
-              {% endfor %}
-            </select>
-          </div>
-
-          <div id="infoTutor" class="alert alert-info small d-none">
-            <i class="bi bi-info-circle me-1"></i>Esta regla intenta (sin garantía) que el tutor de cada curso dé clase a primera hora en su propia aula.
-          </div>
-
-          <button type="submit" class="btn btn-primary">
+          <button type="submit" class="btn btn-primary w-100">
             <i class="bi bi-plus-lg me-1"></i>Añadir regla
           </button>
         </form>
@@ -609,7 +677,7 @@
     </div>
   </div>
 
-  {# Lista de reglas activas #}
+  {# Lista reglas #}
   <div class="col-md-7">
     <div class="card">
       <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -617,56 +685,79 @@
         <span class="badge bg-secondary">{{ reglas|length }}</span>
       </div>
       <div class="card-body p-0">
+        {% set reglas_asig = reglas|selectattr('profesor_regla', 'none')|list %}
+        {% set reglas_prof = reglas|selectattr('profesor_regla')|list %}
         {% if reglas %}
-        <table class="table table-hover mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Tipo</th>
-              <th>Asignatura</th>
-              <th>Detalle</th>
-              <th style="width:50px"></th>
-            </tr>
-          </thead>
+
+        {% if reglas_asig %}
+        <div class="px-3 pt-3 pb-1 text-muted small fw-semibold text-uppercase">Reglas de asignatura</div>
+        <table class="table table-sm table-hover mb-0">
           <tbody>
-            {% for r in reglas %}
+            {% for r in reglas_asig %}
             <tr>
-              <td class="align-middle">
-                {% if r.tipo == 'max_dia' %}
-                <span class="badge bg-primary">Máx/día</span>
-                {% elif r.tipo == 'consecutivas' %}
-                <span class="badge bg-success">Consecutivas</span>
-                {% elif r.tipo == 'fijar_franja' %}
-                <span class="badge bg-warning text-dark">Fijar franja</span>
-                {% elif r.tipo == 'tutor_primera' %}
-                <span class="badge bg-info text-dark">Tutor 1ª hora</span>
+              <td class="align-middle" style="width:130px">
+                {% if r.tipo == 'max_dia' %}<span class="badge bg-primary">Máx/día</span>
+                {% elif r.tipo == 'consecutivas' %}<span class="badge bg-success">Consecutivas</span>
+                {% elif r.tipo == 'fijar_franja' %}<span class="badge bg-warning text-dark">Fijar franja</span>
+                {% elif r.tipo == 'tutor_primera' %}<span class="badge bg-info text-dark">Tutor 1ª hora</span>
                 {% endif %}
               </td>
-              <td class="align-middle">
-                {% if r.asignatura %}{{ r.asignatura.nombre }}{% else %}<span class="text-muted">—</span>{% endif %}
-              </td>
+              <td class="align-middle">{% if r.asignatura %}{{ r.asignatura.nombre }}{% else %}—{% endif %}</td>
               <td class="align-middle small text-muted">
-                {% if r.tipo == 'max_dia' %}
-                  Máximo {{ r.valor }} hora{{ 's' if r.valor != 1 }} por día
-                {% elif r.tipo == 'consecutivas' %}
-                  {{ r.valor }} horas seguidas
-                {% elif r.tipo == 'fijar_franja' %}
-                  {{ r.dia }} {{ r.franja }}
-                {% elif r.tipo == 'tutor_primera' %}
-                  Preferencia global
+                {% if r.tipo == 'max_dia' %}Máx {{ r.valor }}h/día
+                {% elif r.tipo == 'consecutivas' %}{{ r.valor }} seguidas
+                {% elif r.tipo == 'fijar_franja' %}{{ r.dia }} {{ r.franja }}
+                {% elif r.tipo == 'tutor_primera' %}Global
                 {% endif %}
               </td>
               <td class="align-middle text-end">
-                <form method="POST" action="{{ url_for('delete_regla_hc', regla_id=r.id) }}"
-                      onsubmit="return confirm('¿Eliminar esta regla?')">
-                  <button type="submit" class="btn btn-sm btn-outline-danger">
-                    <i class="bi bi-trash"></i>
-                  </button>
+                <form method="POST" action="{{ url_for('delete_regla_hc', regla_id=r.id) }}" onsubmit="return confirm('¿Eliminar?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                 </form>
               </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
+        {% endif %}
+
+        {% if reglas_prof %}
+        <div class="px-3 pt-3 pb-1 text-muted small fw-semibold text-uppercase border-top">Reglas de profesor</div>
+        <table class="table table-sm table-hover mb-0">
+          <tbody>
+            {% for r in reglas_prof %}
+            <tr>
+              <td class="align-middle" style="width:130px">
+                {% set es_dura = r.tipo in ('prof_excluir_curso','prof_fijar_curso','prof_excluir_franja','prof_fijar_asignatura','prof_min_horas','prof_max_horas') %}
+                <span class="badge {% if es_dura %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {% if es_dura %}Dura{% else %}Blanda{% endif %}
+                </span>
+              </td>
+              <td class="align-middle fw-semibold small">{{ r.profesor_regla.nombre }}</td>
+              <td class="align-middle small text-muted">
+                {% if r.tipo == 'prof_excluir_curso' %}Nunca en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
+                {% elif r.tipo == 'prof_fijar_curso' %}Sí o sí en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
+                {% elif r.tipo == 'prof_excluir_franja' %}Nunca {{ r.dia }} {{ r.franja }}
+                {% elif r.tipo == 'prof_fijar_asignatura' %}Sí o sí imparte {{ r.asignatura.nombre if r.asignatura else '?' }}
+                {% elif r.tipo == 'prof_max_horas' %}Máx {{ r.valor }}h en horario
+                {% elif r.tipo == 'prof_min_horas' %}Mín {{ r.valor }}h en horario
+                {% elif r.tipo == 'prof_evitar_curso' %}Intentar no poner en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
+                {% elif r.tipo == 'prof_preferir_curso' %}Intentar poner en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
+                {% elif r.tipo == 'prof_evitar_franja' %}Intentar evitar {{ r.dia }} {{ r.franja }}
+                {% elif r.tipo == 'prof_preferir_asignatura' %}Intentar que imparta {{ r.asignatura.nombre if r.asignatura else '?' }}
+                {% endif %}
+              </td>
+              <td class="align-middle text-end">
+                <form method="POST" action="{{ url_for('delete_regla_hc', regla_id=r.id) }}" onsubmit="return confirm('¿Eliminar?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
         {% else %}
         <div class="text-center text-muted py-5">
           <i class="bi bi-sliders display-4"></i>
@@ -676,15 +767,11 @@
         {% endif %}
       </div>
     </div>
-
-    {% if reglas %}
     <div class="alert alert-info small mt-3">
       <i class="bi bi-info-circle me-1"></i>
-      Las reglas se aplican cuando pulsas <strong>Generar automático</strong> en la pestaña Horario.
-      Las reglas "duras" (Máx/día, Consecutivas, Fijar franja) se respetan siempre.
-      La regla "Tutor 1ª hora" es una preferencia: se intenta pero no garantiza.
+      <strong>Duras</strong>: el algoritmo las respeta siempre.
+      <strong>Blandas</strong>: se intentan pero si no es posible cuadrar, se saltan.
     </div>
-    {% endif %}
   </div>
 </div>
 
@@ -696,20 +783,43 @@
 {% block scripts %}
 <script>
 function updateReglaFields() {
-  var tipo = document.getElementById('tipoRegla').value;
-  var show = function(id) { document.getElementById(id).classList.remove('d-none'); };
-  var hide = function(id) { document.getElementById(id).classList.add('d-none'); };
-  ['campoAsig','campoValor','campoDia','campoFranja','infoTutor'].forEach(hide);
-  if (tipo === 'max_dia') {
-    show('campoAsig'); show('campoValor');
-    document.getElementById('labelValor').textContent = 'Máximo de horas por día';
-  } else if (tipo === 'consecutivas') {
-    show('campoAsig'); show('campoValor');
-    document.getElementById('labelValor').textContent = 'Número de horas seguidas';
-  } else if (tipo === 'fijar_franja') {
-    show('campoAsig'); show('campoDia'); show('campoFranja');
-  } else if (tipo === 'tutor_primera') {
-    show('infoTutor');
+  var cat = document.querySelector('input[name="cat_regla"]:checked');
+  if (!cat) return;
+  var isProf = cat.value === 'prof';
+  var show = function(id) { var el = document.getElementById(id); if (el) el.classList.remove('d-none'); };
+  var hide = function(id) { var el = document.getElementById(id); if (el) el.classList.add('d-none'); };
+
+  if (isProf) {
+    hide('secAsig'); show('secProf');
+    var tipo = document.getElementById('tipoProf').value;
+    ['campoCursoProf','campoAsigProf','campoDiaProf','campoFranjaProf','campoValorProf'].forEach(hide);
+    if (['prof_excluir_curso','prof_fijar_curso','prof_evitar_curso','prof_preferir_curso'].includes(tipo)) {
+      show('campoCursoProf');
+    } else if (['prof_fijar_asignatura','prof_preferir_asignatura'].includes(tipo)) {
+      show('campoAsigProf');
+    } else if (['prof_excluir_franja','prof_evitar_franja'].includes(tipo)) {
+      show('campoDiaProf'); show('campoFranjaProf');
+    } else if (['prof_max_horas','prof_min_horas'].includes(tipo)) {
+      show('campoValorProf');
+      document.getElementById('labelValorProf').textContent =
+        tipo === 'prof_max_horas' ? 'Máximo de horas en el horario' : 'Mínimo de horas en el horario';
+    }
+  } else {
+    show('secAsig'); hide('secProf');
+    var tipo = document.getElementById('tipoAsig').value;
+    ['campoValor','campoDia','campoFranja','infoTutor'].forEach(hide);
+    show('campoAsig');
+    if (tipo === 'max_dia') {
+      show('campoValor');
+      document.getElementById('labelValor').textContent = 'Máximo de horas por día';
+    } else if (tipo === 'consecutivas') {
+      show('campoValor');
+      document.getElementById('labelValor').textContent = 'Número de horas seguidas';
+    } else if (tipo === 'fijar_franja') {
+      show('campoDia'); show('campoFranja');
+    } else if (tipo === 'tutor_primera') {
+      hide('campoAsig'); show('infoTutor');
+    }
   }
 }
 
