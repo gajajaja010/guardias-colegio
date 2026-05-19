@@ -1401,8 +1401,9 @@ def guardar_requisitos_asignatura_hc(asig_id):
     CursoAsignatura.query.filter_by(asignatura_id=asig_id).delete()
     for curso_id in curso_ids_marcados:
         horas = int(request.form.get(f'horas_{curso_id}', 1))
-        db.session.add(CursoAsignatura(
-            curso_id=curso_id, asignatura_id=asig_id, horas_semanales=max(1, horas)))
+        if horas > 0:
+            db.session.add(CursoAsignatura(
+                curso_id=curso_id, asignatura_id=asig_id, horas_semanales=horas))
     db.session.commit()
     flash(f'Requisitos de {asig.nombre} guardados.', 'success')
     return redirect(url_for('horarios_construccion', tab='asignaturas'))
