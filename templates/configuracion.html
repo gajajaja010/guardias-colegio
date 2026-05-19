@@ -109,6 +109,41 @@
   <div class="col-md-6">
     <div class="card">
       <div class="card-header bg-white fw-semibold">
+        <i class="bi bi-stars me-2 text-warning"></i>Asistente IA (Claude)
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info small">
+          <strong>¿Cómo obtener la clave de API?</strong><br>
+          1. Regístrate en <strong>console.anthropic.com</strong><br>
+          2. Ve a <strong>API Keys</strong> y crea una nueva clave<br>
+          3. Cópiala aquí — empieza por <code>sk-ant-</code><br>
+          <span class="text-muted">El coste es muy bajo: unos céntimos por horario generado.</span>
+        </div>
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label">Clave de API de Claude</label>
+            <input type="password" name="anthropic_api_key" class="form-control"
+              placeholder="sk-ant-..."
+              value="{{ cfg.anthropic_api_key or '' }}">
+            <div class="form-text">
+              {% if cfg.anthropic_api_key %}
+              <span class="text-success"><i class="bi bi-check-circle me-1"></i>Clave configurada</span>
+              {% else %}
+              <span class="text-muted">Sin configurar — la generación IA no estará disponible.</span>
+              {% endif %}
+            </div>
+          </div>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-save me-2"></i>Guardar clave
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">
         <i class="bi bi-info-circle me-2"></i>Estado del sistema
       </div>
       <div class="card-body">

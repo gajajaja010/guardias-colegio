@@ -227,6 +227,7 @@ class ConfiguracionEmail(db.Model):
     # 'automatico' → el profesor reporta ausencia y se asigna guardia al momento
     # 'manual'     → el admin revisa la ausencia y aprueba la asignación
     modo_guardias = db.Column(db.String(20), default='manual')
+    anthropic_api_key = db.Column(db.String(200))
 
 
 # ───────────────────────────── AUTH ─────────────────────────────
@@ -1114,8 +1115,11 @@ def configuracion():
         cfg.mail_username = request.form.get('mail_username', '').strip()
         cfg.mail_password = request.form.get('mail_password', '').strip()
         cfg.activo = bool(request.form.get('activo'))
+        api_key = request.form.get('anthropic_api_key', '').strip()
+        if api_key:
+            cfg.anthropic_api_key = api_key
         db.session.commit()
-        flash('Configuración de email guardada.', 'success')
+        flash('Configuración guardada.', 'success')
     return render_template('configuracion.html', cfg=cfg)
 
 
@@ -1510,6 +1514,149 @@ def limpiar_horario_hc():
     return redirect(url_for('horarios_construccion', tab='horario'))
 
 
+# ───────────────────────────── IA HORARIO ─────────────────────────────
+
+@app.route('/horarios-construccion/generar-ia', methods=['POST'])
+@login_required
+def generar_horario_ia():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+
+    cfg = get_config()
+    if not cfg.anthropic_api_key:
+        flash('Configura la clave de API de Claude en Configuración antes de usar la IA.', 'danger')
+        return redirect(url_for('horarios_construccion', tab='horario'))
+
+    instrucciones = request.form.get('instrucciones_ia', '').strip()
+
+    profesores = Profesor.query.filter_by(activo=True, de_baja=False).all()
+    cursos = Curso.query.order_by(Curso.orden).all()
+    asignaturas = Asignatura.query.all()
+    requisitos = CursoAsignatura.query.all()
+    prof_asignaturas = ProfesorAsignatura.query.all()
+    franjas_lectivas = [f for f in FRANJAS if f != 'Patio']
+
+    datos_profesores = []
+    for p in profesores:
+        asigs_ids = {pa.asignatura_id for pa in prof_asignaturas if pa.profesor_id == p.id}
+        asigs_nombres = [a.nombre for a in asignaturas if a.id in asigs_ids]
+        ocupados = [f"{hp.dia} {hp.franja}" for hp in
+                    HorarioProfesor.query.filter_by(profesor_id=p.id, tiene_clase=True).all()]
+        datos_profesores.append({
+            'id': p.id,
+            'nombre': p.nombre,
+            'etapa': p.etapa or 'sin especificar',
+            'aula_tutoria': p.aula_tutoria or 'ninguna',
+            'asignaturas_que_imparte': asigs_nombres,
+            'horas_max_semanales': p.horas_max_semanales,
+            'franjas_ya_ocupadas': ocupados,
+        })
+
+    datos_cursos = []
+    for c in cursos:
+        if c.aula_cerrada:
+            continue
+        reqs = [r for r in requisitos if r.curso_id == c.id]
+        datos_cursos.append({
+            'id': c.id,
+            'nombre': c.nombre,
+            'etapa': c.etapa or 'sin especificar',
+            'asignaturas_requeridas': [
+                {'asignatura_id': r.asignatura_id,
+                 'nombre': r.asignatura.nombre,
+                 'horas_semanales': r.horas_semanales}
+                for r in reqs
+            ],
+        })
+
+    system_prompt = """Eres un asistente experto en creación de horarios escolares.
+Tu tarea es generar un horario semanal completo para un colegio.
+
+REGLAS ESTRICTAS:
+1. Cada entrada del horario tiene: curso_id, asignatura_id, profesor_id, dia, franja.
+2. Los días posibles son: Lunes, Martes, Miércoles, Jueves, Viernes.
+3. Las franjas posibles son: 9:00-10:00, 10:00-11:00, 11:30-12:30, 14:30-15:30, 15:30-16:30.
+4. Un profesor NO puede estar en dos cursos distintos en la misma franja y día.
+5. Un curso solo puede tener UNA asignatura por franja/día.
+6. Respeta las horas semanales requeridas de cada asignatura en cada curso.
+7. Solo asigna un profesor a una asignatura si ese profesor la puede impartir (está en su lista).
+8. Respeta las franjas ya ocupadas de cada profesor (ya tienen clase en esas franjas).
+9. Respeta el máximo de horas semanales de cada profesor.
+10. Prioriza al tutor del curso para impartir clases en su propio curso cuando sea posible.
+
+RESPONDE ÚNICAMENTE con un array JSON válido (sin texto adicional, sin markdown):
+[{"curso_id": 1, "asignatura_id": 2, "profesor_id": 3, "dia": "Lunes", "franja": "9:00-10:00"}, ...]"""
+
+    datos_json = json.dumps({
+        'dias': DIAS_SEMANA,
+        'franjas': franjas_lectivas,
+        'profesores': datos_profesores,
+        'cursos': datos_cursos,
+    }, ensure_ascii=False, indent=2)
+
+    user_content = f"Datos del colegio:\n{datos_json}"
+    if instrucciones:
+        user_content += f"\n\nInstrucciones adicionales del administrador:\n{instrucciones}"
+    user_content += "\n\nGenera el horario completo en JSON."
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=cfg.anthropic_api_key)
+        response = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=8192,
+            system=[{
+                'type': 'text',
+                'text': system_prompt,
+                'cache_control': {'type': 'ephemeral'},
+            }],
+            messages=[{'role': 'user', 'content': user_content}],
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith('```'):
+            raw = raw.split('```')[1]
+            if raw.startswith('json'):
+                raw = raw[4:]
+            raw = raw.strip()
+        asignaciones = json.loads(raw)
+    except Exception as e:
+        flash(f'Error al contactar con la IA: {e}', 'danger')
+        return redirect(url_for('horarios_construccion', tab='horario'))
+
+    ids_cursos = {c.id for c in cursos}
+    ids_asigs = {a.id for a in asignaturas}
+    ids_profs = {p.id for p in profesores}
+
+    HorarioAsignacion.query.delete()
+    guardados = 0
+    vistos = set()
+    for item in asignaciones:
+        try:
+            cid = int(item['curso_id'])
+            aid = int(item['asignatura_id'])
+            pid = int(item['profesor_id'])
+            dia = item['dia']
+            franja = item['franja']
+        except (KeyError, ValueError):
+            continue
+        if cid not in ids_cursos or aid not in ids_asigs or pid not in ids_profs:
+            continue
+        if dia not in DIAS_SEMANA or franja not in franjas_lectivas:
+            continue
+        key = (cid, dia, franja)
+        if key in vistos:
+            continue
+        vistos.add(key)
+        db.session.add(HorarioAsignacion(
+            curso_id=cid, asignatura_id=aid, profesor_id=pid, dia=dia, franja=franja
+        ))
+        guardados += 1
+
+    db.session.commit()
+    flash(f'Horario generado por IA: {guardados} franjas asignadas.', 'success')
+    return redirect(url_for('horarios_construccion', tab='horario'))
+
+
 # ───────────────────────────── INIT DB ─────────────────────────────
 
 def init_db():
@@ -1519,6 +1666,7 @@ def init_db():
         'ALTER TABLE curso ADD COLUMN etapa VARCHAR(50)',
         'ALTER TABLE curso ADD COLUMN aula_cerrada BOOLEAN DEFAULT 0',
         'ALTER TABLE asignatura ADD COLUMN etapa VARCHAR(50)',
+        'ALTER TABLE configuracion_email ADD COLUMN anthropic_api_key VARCHAR(200)',
     ]
     for sql in migrations:
         try:
