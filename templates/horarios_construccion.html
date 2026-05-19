@@ -57,105 +57,87 @@
     </div>
   </div>
 
-  {# — Tabla de asignaturas — #}
+  {# — Lista de asignaturas como cards — #}
   <div class="col-md-8">
-    <div class="card">
-      <div class="card-header bg-white fw-semibold">
-        <i class="bi bi-list-ul me-1"></i>Asignaturas ({{ asignaturas|length }})
-      </div>
-      <div class="card-body p-0">
-        {% if asignaturas %}
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light">
-              <tr>
-                <th style="width:180px">Asignatura</th>
-                <th>Horas por curso</th>
-                <th class="text-end" style="width:90px">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for asig in asignaturas %}
-              <tr>
-                <td class="align-middle">
-                  <span class="badge rounded-pill px-3 py-2 fw-semibold" style="background:{{ asig.color }}; font-size:.85rem;">
-                    {{ asig.nombre }}
-                  </span>
-                </td>
-                <td class="align-middle">
-                  {# Requisitos existentes como chips #}
-                  {% set reqs = {} %}
-                  {% for cr in asig.curso_requisitos %}
-                    {% if reqs.update({cr.curso_id: cr}) %}{% endif %}
-                  {% endfor %}
+    {% if asignaturas %}
+      {% for asig in asignaturas %}
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <span class="badge rounded-pill px-3 py-2 fw-semibold fs-6" style="background:{{ asig.color }}">
+              {{ asig.nombre }}
+            </span>
+            <form method="post" action="{{ url_for('eliminar_asignatura_hc', id=asig.id) }}"
+                  onsubmit="return confirm('¿Eliminar «{{ asig.nombre }}»? Se borrarán todos sus requisitos y asignaciones.')">
+              <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar asignatura">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </div>
 
-                  <div class="d-flex flex-wrap gap-2 align-items-center">
-                    {% for curso in cursos %}
-                      {% set req = asig.curso_requisitos | selectattr('curso_id', 'equalto', curso.id) | list | first %}
-                      {% if req %}
-                        <span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1">
-                          {{ curso.nombre }}: {{ req.horas_semanales }}h
-                          <form method="post" action="{{ url_for('guardar_requisito_hc') }}" class="d-inline m-0">
-                            <input type="hidden" name="curso_id" value="{{ curso.id }}">
-                            <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
-                            <input type="hidden" name="accion" value="eliminar">
-                            <button type="submit" class="btn btn-link p-0 text-danger" style="font-size:.75rem; line-height:1;" title="Quitar">
-                              <i class="bi bi-x-lg"></i>
-                            </button>
-                          </form>
-                        </span>
-                      {% endif %}
-                    {% endfor %}
+          <p class="text-muted small mb-2 fw-semibold">Horas semanales por curso:</p>
 
-                    {# Formulario para añadir horas a un curso #}
-                    <div class="dropdown">
-                      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-plus"></i> Añadir curso
-                      </button>
-                      <div class="dropdown-menu p-3" style="min-width:220px;">
-                        <form method="post" action="{{ url_for('guardar_requisito_hc') }}">
-                          <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
-                          <input type="hidden" name="accion" value="guardar">
-                          <div class="mb-2">
-                            <label class="form-label small mb-1">Curso</label>
-                            <select name="curso_id" class="form-select form-select-sm" required>
-                              <option value="">Seleccionar…</option>
-                              {% for curso in cursos %}
-                                <option value="{{ curso.id }}">{{ curso.nombre }}</option>
-                              {% endfor %}
-                            </select>
-                          </div>
-                          <div class="mb-2">
-                            <label class="form-label small mb-1">Horas/semana</label>
-                            <input type="number" name="horas" class="form-control form-control-sm" value="1" min="1" max="10">
-                          </div>
-                          <button type="submit" class="btn btn-primary btn-sm w-100">Guardar</button>
-                        </form>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td class="align-middle text-end">
-                  <form method="post" action="{{ url_for('eliminar_asignatura_hc', id=asig.id) }}"
-                        onsubmit="return confirm('¿Eliminar la asignatura «{{ asig.nombre }}»? Se borrarán todos sus requisitos y asignaciones.')">
-                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">
-                      <i class="bi bi-trash"></i>
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            {% set tiene_requisitos = [] %}
+            {% for curso in cursos %}
+              {% set req = asig.curso_requisitos | selectattr('curso_id', 'equalto', curso.id) | list | first %}
+              {% if req %}
+                {% if tiene_requisitos.append(1) %}{% endif %}
+                <div class="d-inline-flex align-items-center gap-1 border rounded px-2 py-1 bg-white">
+                  <span class="fw-semibold small">{{ curso.nombre }}</span>
+                  <span class="badge bg-secondary">{{ req.horas_semanales }}h</span>
+                  <form method="post" action="{{ url_for('guardar_requisito_hc') }}" class="d-inline m-0">
+                    <input type="hidden" name="curso_id" value="{{ curso.id }}">
+                    <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
+                    <input type="hidden" name="accion" value="eliminar">
+                    <button type="submit" class="btn btn-link p-0 text-danger ms-1" style="line-height:1;" title="Quitar">
+                      <i class="bi bi-x-lg" style="font-size:.75rem;"></i>
                     </button>
                   </form>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-          <div class="text-center text-muted py-5">
-            <i class="bi bi-book display-4 d-block mb-2"></i>
-            No hay asignaturas todavía. Crea la primera.
+                </div>
+              {% endif %}
+            {% endfor %}
+            {% if not tiene_requisitos %}
+              <span class="text-muted small fst-italic">Sin cursos asignados todavía.</span>
+            {% endif %}
           </div>
-        {% endif %}
+
+          {# Formulario inline para añadir curso #}
+          {% if cursos %}
+          <form method="post" action="{{ url_for('guardar_requisito_hc') }}" class="d-flex align-items-end gap-2 flex-wrap">
+            <input type="hidden" name="asignatura_id" value="{{ asig.id }}">
+            <input type="hidden" name="accion" value="guardar">
+            <div>
+              <label class="form-label small mb-1">Curso</label>
+              <select name="curso_id" class="form-select form-select-sm" required style="min-width:120px;">
+                <option value="">Seleccionar…</option>
+                {% for curso in cursos %}
+                  <option value="{{ curso.id }}">{{ curso.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label small mb-1">Horas/semana</label>
+              <input type="number" name="horas" class="form-control form-control-sm" value="1" min="1" max="10" style="width:80px;">
+            </div>
+            <button type="submit" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-plus-lg me-1"></i>Añadir
+            </button>
+          </form>
+          {% else %}
+            <small class="text-muted">Crea cursos en <a href="{{ url_for('tutorias') }}">Tutorías</a> primero.</small>
+          {% endif %}
+        </div>
       </div>
-    </div>
+      {% endfor %}
+    {% else %}
+      <div class="card">
+        <div class="card-body text-center text-muted py-5">
+          <i class="bi bi-book display-4 d-block mb-2"></i>
+          No hay asignaturas todavía. Crea la primera.
+        </div>
+      </div>
+    {% endif %}
   </div>
 
 </div>
