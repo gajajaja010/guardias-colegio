@@ -118,7 +118,7 @@
             <label class="form-label">Etapa educativa</label>
             <select name="etapa" class="form-select">
               <option value="">Sin especificar</option>
-              {% for e in ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
+              {% for e in ['1-2 años', 'Haur Hezkuntza', 'Lehen Hezkuntza', 'Otras'] %}
               <option value="{{ e }}">{{ e }}</option>
               {% endfor %}
             </select>
@@ -171,7 +171,7 @@
             <label class="form-label">Etapa educativa</label>
             <select name="etapa" id="editCursoEtapa" class="form-select">
               <option value="">Sin especificar</option>
-              {% for e in ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
+              {% for e in ['1-2 años', 'Haur Hezkuntza', 'Lehen Hezkuntza', 'Otras'] %}
               <option value="{{ e }}">{{ e }}</option>
               {% endfor %}
             </select>

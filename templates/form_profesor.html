@@ -37,7 +37,7 @@
           <div class="row">
             <div class="col-md-6 mb-3">
               <label class="form-label">Etapas educativas</label>
-              {% set etapas_lista = ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
+              {% set etapas_lista = ['1-2 años', 'Haur Hezkuntza', 'Lehen Hezkuntza', 'Otras'] %}
               {% set etapas_prof = profesor.etapa | from_json if profesor else [] %}
               <div class="border rounded p-2">
                 {% for e in etapas_lista %}

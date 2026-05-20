@@ -56,14 +56,14 @@ FRANJAS = ['9:00-10:00', '10:00-11:00', 'Patio', '11:30-12:30', '14:30-15:30', '
 
 # ───────────────────────────── MODELOS ─────────────────────────────
 
-ETAPAS = ['1-2 años', '3-4-5 años', 'Primaria', 'Otras']
+ETAPAS = ['1-2 años', 'Haur Hezkuntza', 'Lehen Hezkuntza', 'Otras']
 
 class Profesor(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200))
-    etapa = db.Column(db.Text, default='[]')  # JSON list: ["Primaria", "3-4-5 años"]
+    etapa = db.Column(db.Text, default='[]')  # JSON list: ["Lehen Hezkuntza", "Haur Hezkuntza"]
     aula_tutoria = db.Column(db.String(50))
     aulas_bloqueadas = db.Column(db.Text, default='[]')  # JSON: ["2ºA", "3ºB"]
     es_admin = db.Column(db.Boolean, default=False)
