@@ -452,7 +452,7 @@
               {% set asig = horario_prof_grid.get((dia, franja)) %}
               {% set grupo_slot = comp_grid.get((dia, franja)) %}
               <td class="align-middle p-1" style="min-width:120px;
-                {% if not asig %}background:#f8f9fa;{% endif %}">
+                {% if not asig and not grupo_slot %}background:#f8f9fa;{% endif %}">
                 {% if asig %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
@@ -469,13 +469,15 @@
                   </span>
                   <small class="text-muted" style="font-size:.72rem;">Grupo de trabajo</small>
                 </div>
-                {% else %}
+                {% elif prof_sel and prof_sel.horas_libres and prof_sel.horas_libres > 0 %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100"
                         style="background:#adb5bd; font-size:.8rem;">
                     <i class="bi bi-clock me-1"></i>Complementaria
                   </span>
                 </div>
+                {% else %}
+                <span class="text-muted small">—</span>
                 {% endif %}
               </td>
               {% endfor %}

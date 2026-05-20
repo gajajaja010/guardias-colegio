@@ -1485,7 +1485,7 @@ def generar_horario_automatico():
 
     cursos_map = {c.id: c for c in Curso.query.all()}
     asig_map = {a.id: a for a in Asignatura.query.all()}
-    profesores_activos = Profesor.query.filter_by(activo=True).all()
+    profesores_activos = Profesor.query.filter_by(activo=True, es_admin=False).all()
 
     # Cargar reglas de asignatura
     reglas_max_dia = {}
@@ -1883,7 +1883,7 @@ def horarios_construccion():
         _grupos.setdefault(key, []).append(a)
     asignaturas_por_etapa = sorted(_grupos.items(), key=lambda x: _etapa_order.get(x[0], 99))
     cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
-    profesores_lista = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
+    profesores_lista = Profesor.query.filter_by(activo=True, de_baja=False, es_admin=False).order_by(Profesor.nombre).all()
 
     curso_sel = None
     horario_grid = {}
