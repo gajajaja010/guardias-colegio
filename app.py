@@ -1717,6 +1717,8 @@ def horarios_construccion():
         return redirect(url_for('dashboard'))
     tab = request.args.get('tab', 'asignaturas')
     curso_id = request.args.get('curso_id', type=int)
+    vista = request.args.get('vista', 'clase')  # 'clase' o 'profesor'
+    prof_id = request.args.get('prof_id', type=int)
 
     asignaturas = Asignatura.query.order_by(Asignatura.nombre).all()
     # Pre-agrupar por etapa en Python para evitar problemas con None en Jinja2 groupby
@@ -1731,11 +1733,19 @@ def horarios_construccion():
 
     curso_sel = None
     horario_grid = {}
-    if tab == 'horario' and cursos:
-        curso_sel = Curso.query.get(curso_id) if curso_id else cursos[0]
-        if curso_sel:
-            for a in HorarioAsignacion.query.filter_by(curso_id=curso_sel.id).all():
-                horario_grid[(a.dia, a.franja)] = a
+    prof_sel = None
+    horario_prof_grid = {}
+    if tab == 'horario':
+        if vista == 'profesor' and profesores_lista:
+            prof_sel = Profesor.query.get(prof_id) if prof_id else profesores_lista[0]
+            if prof_sel:
+                for a in HorarioAsignacion.query.filter_by(profesor_id=prof_sel.id).all():
+                    horario_prof_grid[(a.dia, a.franja)] = a
+        elif cursos:
+            curso_sel = Curso.query.get(curso_id) if curso_id else cursos[0]
+            if curso_sel:
+                for a in HorarioAsignacion.query.filter_by(curso_id=curso_sel.id).all():
+                    horario_grid[(a.dia, a.franja)] = a
 
     prof_asignaturas = {
         p.id: [pa.asignatura_id for pa in ProfesorAsignatura.query.filter_by(profesor_id=p.id).all()]
@@ -1754,9 +1764,11 @@ def horarios_construccion():
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
 
     return render_template('horarios_construccion.html',
-        tab=tab, asignaturas=asignaturas, asignaturas_por_etapa=asignaturas_por_etapa, cursos=cursos,
-        profesores=profesores_lista, curso_sel=curso_sel,
-        horario_grid=horario_grid, prof_asignaturas=prof_asignaturas,
+        tab=tab, vista=vista, asignaturas=asignaturas, asignaturas_por_etapa=asignaturas_por_etapa,
+        cursos=cursos, profesores=profesores_lista,
+        curso_sel=curso_sel, horario_grid=horario_grid,
+        prof_sel=prof_sel, horario_prof_grid=horario_prof_grid,
+        prof_asignaturas=prof_asignaturas,
         prof_horas_asig=prof_horas_asig, prof_especialidades=prof_especialidades,
         etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS, franjas_clase=franjas_clase,
         reglas=reglas)

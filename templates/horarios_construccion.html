@@ -303,11 +303,24 @@
 {# ══════════════════ TAB HORARIO ══════════════════ #}
 {% if tab == 'horario' %}
 
-{# — Barra de acciones — #}
-<div class="d-flex flex-wrap gap-2 align-items-center mb-4">
+{# — Toggle vista — #}
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+  <div class="btn-group" role="group">
+    <a href="{{ url_for('horarios_construccion', tab='horario', vista='clase') }}"
+       class="btn btn-sm {% if vista == 'clase' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      <i class="bi bi-grid me-1"></i>Por clase
+    </a>
+    <a href="{{ url_for('horarios_construccion', tab='horario', vista='profesor') }}"
+       class="btn btn-sm {% if vista == 'profesor' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      <i class="bi bi-person me-1"></i>Por profesor
+    </a>
+  </div>
+
+  {% if vista == 'clase' %}
   {# Selector de curso #}
-  <form method="get" action="{{ url_for('horarios_construccion') }}" class="d-flex align-items-center gap-2 me-3">
+  <form method="get" action="{{ url_for('horarios_construccion') }}" class="d-flex align-items-center gap-2">
     <input type="hidden" name="tab" value="horario">
+    <input type="hidden" name="vista" value="clase">
     <label class="fw-semibold me-1 mb-0">Curso:</label>
     <select name="curso_id" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
       {% for c in cursos %}
@@ -317,7 +330,6 @@
       {% endfor %}
     </select>
   </form>
-
   {# Generar horario #}
   <form method="post" action="{{ url_for('generar_horario_hc') }}"
         onsubmit="return confirm('¿Generar horario automático? Se borrará el actual.')">
@@ -325,20 +337,32 @@
       <i class="bi bi-magic me-1"></i>Generar automático
     </button>
   </form>
-
-  {# Generar con IA #}
   <button class="btn btn-warning btn-sm" type="button"
           data-bs-toggle="collapse" data-bs-target="#panelIA" aria-expanded="false">
     <i class="bi bi-stars me-1"></i>Generar con IA
   </button>
-
-  {# Limpiar horario #}
   <form method="post" action="{{ url_for('limpiar_horario_hc') }}"
         onsubmit="return confirm('¿Borrar todo el horario?')">
     <button type="submit" class="btn btn-outline-danger btn-sm">
       <i class="bi bi-trash me-1"></i>Limpiar
     </button>
   </form>
+
+  {% else %}
+  {# Selector de profesor #}
+  <form method="get" action="{{ url_for('horarios_construccion') }}" class="d-flex align-items-center gap-2">
+    <input type="hidden" name="tab" value="horario">
+    <input type="hidden" name="vista" value="profesor">
+    <label class="fw-semibold me-1 mb-0">Profesor:</label>
+    <select name="prof_id" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+      {% for p in profesores %}
+        <option value="{{ p.id }}" {% if prof_sel and p.id == prof_sel.id %}selected{% endif %}>
+          {{ p.nombre }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+  {% endif %}
 </div>
 
 {# Panel IA colapsable #}
@@ -368,6 +392,59 @@
   </div>
 </div>
 
+{# ── Vista por profesor ── #}
+{% if vista == 'profesor' %}
+{% if not profesores %}
+  <div class="alert alert-warning">No hay profesores activos.</div>
+{% elif prof_sel %}
+<div class="card mb-4">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-person-circle me-1"></i>Horario de <strong>{{ prof_sel.nombre }}</strong>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-bordered mb-0 text-center" style="min-width:700px;">
+        <thead class="table-light">
+          <tr>
+            <th style="width:110px">Franja</th>
+            {% for dia in dias %}<th>{{ dia }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for franja in franjas %}
+          <tr {% if franja == 'Patio' %}class="table-secondary"{% endif %}>
+            <td class="fw-semibold small align-middle {% if franja == 'Patio' %}text-muted{% endif %}">{{ franja }}</td>
+            {% if franja == 'Patio' %}
+              <td colspan="{{ dias|length }}" class="text-muted fst-italic align-middle">— Patio —</td>
+            {% else %}
+              {% for dia in dias %}
+              <td class="align-middle p-1" style="min-width:120px;">
+                {% set asig = horario_prof_grid.get((dia, franja)) %}
+                {% if asig %}
+                <div class="d-flex flex-column align-items-center gap-1">
+                  <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
+                        style="background:{{ asig.asignatura.color }}; font-size:.8rem;">
+                    {{ asig.asignatura.nombre }}
+                  </span>
+                  <small class="text-muted" style="font-size:.72rem;">{{ asig.curso.nombre }}</small>
+                </div>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              {% endfor %}
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Vista por clase ── #}
+{% else %}
 {% if not cursos %}
   <div class="alert alert-warning">
     <i class="bi bi-exclamation-triangle me-1"></i>No hay cursos. Crea cursos primero en <strong>Tutorías</strong>.
@@ -494,6 +571,7 @@
 {% endif %}
 
 {% endif %} {# fin curso_sel #}
+{% endif %} {# fin vista clase #}
 
 
 {# ── Modal asignar/editar franja ── #}
