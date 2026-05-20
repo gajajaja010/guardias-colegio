@@ -2033,6 +2033,7 @@ def generar_horario_hc():
     if not current_user.es_admin:
         return redirect(url_for('dashboard'))
     sin_asignar = generar_horario_automatico()
+    _asignar_grupos_trabajo()
     if sin_asignar:
         nombres = []
         for curso_id, asig_id in sin_asignar[:5]:
@@ -2041,7 +2042,7 @@ def generar_horario_hc():
             nombres.append(f'{a.nombre} ({c.nombre})')
         flash(f'Horario generado. No se pudieron asignar: {", ".join(nombres)}', 'warning')
     else:
-        flash('Horario generado correctamente.', 'success')
+        flash('Horario generado correctamente con grupos de trabajo asignados.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario'))
 
 
@@ -2088,11 +2089,8 @@ def limpiar_horario_hc():
     return redirect(url_for('horarios_construccion', tab='horario'))
 
 
-@app.route('/horarios-construccion/generar-complementarias', methods=['POST'])
-@login_required
-def generar_complementarias_hc():
-    if not current_user.es_admin:
-        return redirect(url_for('dashboard'))
+def _asignar_grupos_trabajo():
+    """Asigna slots de grupos de trabajo. Devuelve el número de grupos procesados."""
     import random, math
     SlotComplementaria.query.delete()
 
@@ -2106,18 +2104,23 @@ def generar_complementarias_hc():
         if asig.profesor2_id:
             prof_ocupado[asig.profesor2_id].add((asig.dia, asig.franja))
 
-    # Grupos de trabajo — todos los miembros deben coincidir en el mismo slot
-    for grupo in GrupoTrabajo.query.order_by(GrupoTrabajo.id).all():
+    grupos = GrupoTrabajo.query.order_by(GrupoTrabajo.id).all()
+    for grupo in grupos:
         miembros = ProfesorGrupo.query.filter_by(grupo_id=grupo.id).all()
         if not miembros:
             continue
-        prof_ids = [m.profesor_id for m in miembros]
-        n_slots = math.ceil(max(m.horas_semanales for m in miembros))
+
+        # Slots compartidos = mínimo de horas entre miembros (todos deben coincidir)
+        # Las horas extra de cada miembro se asignan individualmente
+        min_horas = math.ceil(min(m.horas_semanales for m in miembros))
         slots_s = slots_all[:]
         random.shuffle(slots_s)
+        prof_ids = [m.profesor_id for m in miembros]
+
+        # Paso 1: slots compartidos (todos presentes)
         colocados = 0
         for dia, franja in slots_s:
-            if colocados >= n_slots:
+            if colocados >= min_horas:
                 break
             slot = (dia, franja)
             if all(slot not in prof_ocupado[pid] for pid in prof_ids):
@@ -2129,7 +2132,35 @@ def generar_complementarias_hc():
                     prof_ocupado[pid].add(slot)
                 colocados += 1
 
+        # Paso 2: horas extra de cada miembro individualmente
+        for m in miembros:
+            extras = math.ceil(m.horas_semanales) - min_horas
+            if extras <= 0:
+                continue
+            random.shuffle(slots_s)
+            colocados_extra = 0
+            for dia, franja in slots_s:
+                if colocados_extra >= extras:
+                    break
+                slot = (dia, franja)
+                if slot not in prof_ocupado[m.profesor_id]:
+                    db.session.add(SlotComplementaria(
+                        profesor_id=m.profesor_id, dia=dia, franja=franja,
+                        tipo='grupo', grupo_id=grupo.id
+                    ))
+                    prof_ocupado[m.profesor_id].add(slot)
+                    colocados_extra += 1
+
     db.session.commit()
+    return len(grupos)
+
+
+@app.route('/horarios-construccion/generar-complementarias', methods=['POST'])
+@login_required
+def generar_complementarias_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    _asignar_grupos_trabajo()
     flash('Grupos de trabajo asignados correctamente.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario', vista='profesor'))
 
