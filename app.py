@@ -2125,7 +2125,7 @@ def limpiar_horario_hc():
 
 
 def _asignar_grupos_trabajo():
-    """Asigna slots de grupos de trabajo. Devuelve el número de grupos procesados."""
+    """Asigna slots de grupos de trabajo y complementarias individuales."""
     import random, math
     SlotComplementaria.query.delete()
 
@@ -2139,20 +2139,21 @@ def _asignar_grupos_trabajo():
         if asig.profesor2_id:
             prof_ocupado[asig.profesor2_id].add((asig.dia, asig.franja))
 
+    # Slots de grupos ya asignados a cada profesor (para descontar de complementarias)
+    prof_slots_grupo = defaultdict(int)
+
     grupos = GrupoTrabajo.query.order_by(GrupoTrabajo.id).all()
     for grupo in grupos:
         miembros = ProfesorGrupo.query.filter_by(grupo_id=grupo.id).all()
         if not miembros:
             continue
 
-        # Slots compartidos = mínimo de horas entre miembros (todos deben coincidir)
-        # Las horas extra de cada miembro se asignan individualmente
+        # Slots compartidos = mínimo de horas (ceil) entre miembros — todos coinciden
         min_horas = math.ceil(min(m.horas_semanales for m in miembros))
         slots_s = slots_all[:]
         random.shuffle(slots_s)
         prof_ids = [m.profesor_id for m in miembros]
 
-        # Paso 1: slots compartidos (todos presentes)
         colocados = 0
         for dia, franja in slots_s:
             if colocados >= min_horas:
@@ -2165,9 +2166,10 @@ def _asignar_grupos_trabajo():
                         tipo='grupo', grupo_id=grupo.id
                     ))
                     prof_ocupado[pid].add(slot)
+                    prof_slots_grupo[pid] += 1
                 colocados += 1
 
-        # Paso 2: horas extra de cada miembro individualmente
+        # Horas extra de cada miembro individualmente
         for m in miembros:
             extras = math.ceil(m.horas_semanales) - min_horas
             if extras <= 0:
@@ -2184,7 +2186,28 @@ def _asignar_grupos_trabajo():
                         tipo='grupo', grupo_id=grupo.id
                     ))
                     prof_ocupado[m.profesor_id].add(slot)
+                    prof_slots_grupo[m.profesor_id] += 1
                     colocados_extra += 1
+
+    # Slots de complementaria libre individual (int = floor, para respetar 2.5 → 2 slots)
+    for prof in Profesor.query.filter_by(activo=True, de_baja=False, es_admin=False).all():
+        n_libre = int(prof.horas_libres or 0)
+        if n_libre <= 0:
+            continue
+        slots_s = slots_all[:]
+        random.shuffle(slots_s)
+        colocados = 0
+        for dia, franja in slots_s:
+            if colocados >= n_libre:
+                break
+            slot = (dia, franja)
+            if slot not in prof_ocupado[prof.id]:
+                db.session.add(SlotComplementaria(
+                    profesor_id=prof.id, dia=dia, franja=franja,
+                    tipo='libre'
+                ))
+                prof_ocupado[prof.id].add(slot)
+                colocados += 1
 
     db.session.commit()
     return len(grupos)

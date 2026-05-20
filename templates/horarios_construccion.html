@@ -450,9 +450,9 @@
             {% else %}
               {% for dia in dias %}
               {% set asig = horario_prof_grid.get((dia, franja)) %}
-              {% set grupo_slot = comp_grid.get((dia, franja)) %}
+              {% set slot_c = comp_grid.get((dia, franja)) %}
               <td class="align-middle p-1" style="min-width:120px;
-                {% if not asig and not grupo_slot %}background:#f8f9fa;{% endif %}">
+                {% if not asig and slot_c %}background:#f0f4f8;{% elif not asig %}background:#f8f9fa;{% endif %}">
                 {% if asig %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
@@ -461,15 +461,15 @@
                   </span>
                   <small class="text-muted" style="font-size:.72rem;">{{ asig.curso.nombre }}</small>
                 </div>
-                {% elif grupo_slot and grupo_slot.grupo_rel %}
+                {% elif slot_c and slot_c.tipo == 'grupo' and slot_c.grupo_rel %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
                         style="background:#5c6bc0; font-size:.8rem;">
-                    <i class="bi bi-people-fill me-1"></i>{{ grupo_slot.grupo_rel.nombre }}
+                    <i class="bi bi-people-fill me-1"></i>{{ slot_c.grupo_rel.nombre }}
                   </span>
                   <small class="text-muted" style="font-size:.72rem;">Grupo de trabajo</small>
                 </div>
-                {% elif prof_sel and prof_sel.horas_libres and prof_sel.horas_libres > 0 %}
+                {% elif slot_c and slot_c.tipo == 'libre' %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100"
                         style="background:#adb5bd; font-size:.8rem;">
