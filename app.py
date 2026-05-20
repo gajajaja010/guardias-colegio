@@ -8,6 +8,7 @@ import os
 import json
 import io
 import openpyxl
+from collections import defaultdict
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'guardias-colegio-secret-2024')
@@ -1470,7 +1471,6 @@ def importar_datos_iniciales():
 
 def generar_horario_automatico():
     import random
-    from collections import defaultdict
 
     HorarioAsignacion.query.delete()
     db.session.flush()
