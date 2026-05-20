@@ -73,14 +73,14 @@
             <div class="col-md-4 mb-3">
               <label class="form-label">Horas lectivas semanales</label>
               <input type="number" name="horas_lectivas" class="form-control"
-                min="0" max="40" value="{{ profesor.horas_lectivas if profesor else 0 }}"
+                min="0" max="40" step="0.5" value="{{ profesor.horas_lectivas if profesor else 0 }}"
                 style="width:120px">
               <div class="form-text">Horas en el aula impartiendo clase.</div>
             </div>
             <div class="col-md-4 mb-3">
               <label class="form-label">Horas libres semanales</label>
               <input type="number" name="horas_libres" class="form-control"
-                min="0" max="40" value="{{ profesor.horas_libres if profesor else 0 }}"
+                min="0" max="40" step="0.5" value="{{ profesor.horas_libres if profesor else 0 }}"
                 style="width:120px">
               <div class="form-text">Horas disponibles para guardias.</div>
             </div>

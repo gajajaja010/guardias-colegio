@@ -76,8 +76,8 @@ class Profesor(UserMixin, db.Model):
     fecha_vuelta = db.Column(db.Date)
     horas_max_semanales = db.Column(db.Integer, default=25)
     horas_trabajo_personal = db.Column(db.Integer, default=0)
-    horas_libres = db.Column(db.Integer, default=0)
-    horas_lectivas = db.Column(db.Integer, default=0)
+    horas_libres = db.Column(db.Float, default=0)
+    horas_lectivas = db.Column(db.Float, default=0)
     horas_pt = db.Column(db.Float, default=0)
     horas_educador = db.Column(db.Float, default=0)
     materias_especiales = db.Column(db.Text, default='[]')  # JSON: ["Inglés", "Música", ...]
@@ -535,8 +535,8 @@ def nuevo_profesor():
             es_pt=bool(request.form.get('es_pt')),
             es_educador=bool(request.form.get('es_educador')),
             horas_trabajo_personal=int(request.form.get('horas_trabajo_personal', 0) or 0),
-            horas_libres=int(request.form.get('horas_libres', 0) or 0),
-            horas_lectivas=int(request.form.get('horas_lectivas', 0) or 0),
+            horas_libres=float(request.form.get('horas_libres', 0) or 0),
+            horas_lectivas=float(request.form.get('horas_lectivas', 0) or 0),
             horas_pt=float(request.form.get('horas_pt', 0) or 0),
             horas_educador=float(request.form.get('horas_educador', 0) or 0),
             materias_especiales=json.dumps(request.form.getlist('materias_especiales')),
@@ -630,8 +630,8 @@ def editar_profesor(id):
         p.etapa = json.dumps(request.form.getlist('etapas'))
         p.aula_tutoria = request.form.get('aula_tutoria', '').strip() or None
         p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
-        p.horas_libres = int(request.form.get('horas_libres', 0) or 0)
-        p.horas_lectivas = int(request.form.get('horas_lectivas', 0) or 0)
+        p.horas_libres = float(request.form.get('horas_libres', 0) or 0)
+        p.horas_lectivas = float(request.form.get('horas_lectivas', 0) or 0)
         p.horas_pt = float(request.form.get('horas_pt', 0) or 0)
         p.horas_educador = float(request.form.get('horas_educador', 0) or 0)
         p.materias_especiales = json.dumps(request.form.getlist('materias_especiales'))
@@ -2143,8 +2143,10 @@ def init_db():
         'ALTER TABLE regla_horario ADD COLUMN dureza VARCHAR(10) DEFAULT \'dura\'',
         'ALTER TABLE regla_horario ADD COLUMN profesor_id INTEGER REFERENCES profesor(id)',
         'ALTER TABLE regla_horario ADD COLUMN curso_id_regla INTEGER REFERENCES curso(id)',
-        'ALTER TABLE profesor ADD COLUMN horas_libres INTEGER DEFAULT 0',
-        'ALTER TABLE profesor ADD COLUMN horas_lectivas INTEGER DEFAULT 0',
+        'ALTER TABLE profesor ADD COLUMN horas_libres REAL DEFAULT 0',
+        'ALTER TABLE profesor ADD COLUMN horas_lectivas REAL DEFAULT 0',
+        'ALTER TABLE profesor ALTER COLUMN horas_libres TYPE REAL USING horas_libres::REAL',
+        'ALTER TABLE profesor ALTER COLUMN horas_lectivas TYPE REAL USING horas_lectivas::REAL',
         'ALTER TABLE profesor ADD COLUMN es_educador BOOLEAN DEFAULT FALSE',
         'ALTER TABLE profesor ADD COLUMN horas_pt REAL DEFAULT 0',
         'ALTER TABLE profesor ADD COLUMN horas_educador REAL DEFAULT 0',
