@@ -75,6 +75,7 @@ class Profesor(UserMixin, db.Model):
     fecha_vuelta = db.Column(db.Date)
     horas_max_semanales = db.Column(db.Integer, default=25)
     horas_trabajo_personal = db.Column(db.Integer, default=0)
+    materias_especiales = db.Column(db.Text, default='[]')  # JSON: ["Inglés", "Música", ...]
     creado = db.Column(db.DateTime, default=datetime.utcnow)
 
     horario = db.relationship('HorarioProfesor', backref='profesor', lazy=True, cascade='all, delete-orphan')
@@ -499,6 +500,7 @@ def nuevo_profesor():
             es_especialista=bool(request.form.get('es_especialista')),
             es_pt=bool(request.form.get('es_pt')),
             horas_trabajo_personal=int(request.form.get('horas_trabajo_personal', 0) or 0),
+            materias_especiales=json.dumps(request.form.getlist('materias_especiales')),
         )
         db.session.add(p)
         db.session.commit()
@@ -587,6 +589,7 @@ def editar_profesor(id):
         p.aula_tutoria = request.form.get('aula_tutoria', '').strip() or None
         p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
         p.horas_trabajo_personal = int(request.form.get('horas_trabajo_personal', 0) or 0)
+        p.materias_especiales = json.dumps(request.form.getlist('materias_especiales'))
         if current_user.es_admin:
             p.es_admin = bool(request.form.get('es_admin'))
             p.es_especialista = bool(request.form.get('es_especialista'))
@@ -1966,6 +1969,7 @@ def init_db():
         'ALTER TABLE configuracion_email ADD COLUMN anthropic_api_key VARCHAR(200)',
         'ALTER TABLE profesor ADD COLUMN es_pt BOOLEAN DEFAULT FALSE',
         'ALTER TABLE profesor ADD COLUMN horas_trabajo_personal INTEGER DEFAULT 0',
+        "ALTER TABLE profesor ADD COLUMN materias_especiales TEXT DEFAULT '[]'",
         'ALTER TABLE regla_horario ADD COLUMN dureza VARCHAR(10) DEFAULT \'dura\'',
         'ALTER TABLE regla_horario ADD COLUMN profesor_id INTEGER REFERENCES profesor(id)',
         'ALTER TABLE regla_horario ADD COLUMN curso_id_regla INTEGER REFERENCES curso(id)',

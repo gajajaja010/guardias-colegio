@@ -78,6 +78,23 @@
           </div>
 
           <div class="mb-3">
+            <label class="form-label">Especialidades que puede impartir</label>
+            {% set materias_prof = profesor.materias_especiales | from_json if profesor else [] %}
+            {% set materias_lista = ['Gimnasia', 'Música', 'Religión', 'Inglés', 'Francés'] %}
+            <div class="border rounded p-2 d-flex flex-wrap gap-3">
+              {% for m in materias_lista %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                  name="materias_especiales" value="{{ m }}"
+                  id="materia_{{ loop.index }}"
+                  {{ 'checked' if m in materias_prof }}>
+                <label class="form-check-label" for="materia_{{ loop.index }}">{{ m }}</label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="mb-3">
             <label class="form-label">Clases donde <strong>no</strong> puede hacer guardia</label>
             {% if cursos %}
             {% set bloqueadas = profesor.aulas_bloqueadas | from_json if profesor else [] %}

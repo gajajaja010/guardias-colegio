@@ -40,6 +40,8 @@
               <span class="text-muted">—</span>
             {% endif %}
             {% if p.es_pt %}<span class="badge bg-warning text-dark ms-1">PT</span>{% endif %}
+            {% set materias = p.materias_especiales | from_json %}
+            {% for m in materias %}<span class="badge bg-secondary ms-1">{{ m }}</span>{% endfor %}
           </td>
           <td>
             <span class="badge bg-secondary">{{ p.total_guardias }}</span>
