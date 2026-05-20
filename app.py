@@ -2309,6 +2309,7 @@ def init_db():
         'ALTER TABLE regla_horario ADD COLUMN etapa VARCHAR(50)',
         'ALTER TABLE horario_asignacion ADD COLUMN asignatura2_id INTEGER REFERENCES asignatura(id)',
         'ALTER TABLE horario_asignacion ADD COLUMN profesor2_id INTEGER REFERENCES profesor(id)',
+        'ALTER TABLE curso_asignatura ALTER COLUMN horas_semanales TYPE REAL USING horas_semanales::REAL',
     ]
     for sql in migrations:
         try:
