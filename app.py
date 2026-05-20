@@ -1464,6 +1464,11 @@ def generar_horario_automatico():
     reglas_fijar = {}
     regla_tutor_primera = False
 
+    # Reglas generales por clase (etapa): tutor imparte asignatura en su clase
+    # etapa -> asig_id -> dureza ('dura'|'blanda')
+    reglas_tutor_etapa_dura = defaultdict(set)   # etapa -> set(asig_id)
+    reglas_tutor_etapa_blanda = defaultdict(set) # etapa -> set(asig_id)
+
     # Cargar reglas de profesor
     rp_excluir_curso = defaultdict(set)       # curso_id -> profs excluidos (dura)
     rp_fijar_curso = defaultdict(set)         # curso_id -> profs forzados (dura)
@@ -1485,6 +1490,11 @@ def generar_horario_automatico():
             reglas_fijar[r.asignatura_id] = (r.dia, r.franja)
         elif r.tipo == 'tutor_primera':
             regla_tutor_primera = True
+        elif r.tipo == 'tutor_clase_etapa' and r.etapa and r.asignatura_id:
+            if r.dureza == 'dura':
+                reglas_tutor_etapa_dura[r.etapa].add(r.asignatura_id)
+            else:
+                reglas_tutor_etapa_blanda[r.etapa].add(r.asignatura_id)
         elif r.profesor_id:
             pid = r.profesor_id
             if r.tipo == 'prof_excluir_curso' and r.curso_id_regla:
@@ -1528,6 +1538,7 @@ def generar_horario_automatico():
         if p.aula_tutoria:
             prof_tutoria[p.aula_tutoria].append(p.id)
     curso_nombre = {c.id: c.nombre for c in cursos_map.values()}
+    curso_etapa = {c.id: c.etapa for c in cursos_map.values()}
 
     def etapa_compatible(prof_id, asig_id):
         asig = asig_map.get(asig_id)
@@ -1594,6 +1605,16 @@ def generar_horario_automatico():
             if restricted:
                 cands = restricted
 
+        # Regla tutor_clase_etapa: en esta etapa el tutor imparte esta asig
+        etapa_curso = curso_etapa.get(curso_id)
+        nombre_curso = curso_nombre.get(curso_id, '')
+        tutor_ids_curso = set(prof_tutoria.get(nombre_curso, []))
+        if etapa_curso and asig_id in reglas_tutor_etapa_dura.get(etapa_curso, set()):
+            # Dura: solo el tutor del curso puede impartirla
+            restricted = [p for p in cands if p in tutor_ids_curso]
+            if restricted:
+                cands = restricted
+
         if not cands:
             return []
 
@@ -1609,6 +1630,9 @@ def generar_horario_automatico():
             if pid in pref_a: score -= 15
             if pid in evit_c: score += 20
             if pid in evit_f: score += 10
+            # Blanda tutor_clase_etapa: preferir al tutor
+            if etapa_curso and asig_id in reglas_tutor_etapa_blanda.get(etapa_curso, set()):
+                if pid in tutor_ids_curso: score -= 30
             return score
 
         random.shuffle(cands)
@@ -1616,11 +1640,9 @@ def generar_horario_automatico():
 
         # Tutor a primera hora (blanda, máxima prioridad si aplica)
         if regla_tutor_primera and franja == primera_franja:
-            nombre_curso = curso_nombre.get(curso_id, '')
-            tutor_ids = set(prof_tutoria.get(nombre_curso, []))
-            tutores_en_cands = [p for p in cands if p in tutor_ids]
+            tutores_en_cands = [p for p in cands if p in tutor_ids_curso]
             if tutores_en_cands:
-                cands = tutores_en_cands + [p for p in cands if p not in tutor_ids]
+                cands = tutores_en_cands + [p for p in cands if p not in tutor_ids_curso]
 
         return cands
 
