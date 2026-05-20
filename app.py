@@ -1706,16 +1706,22 @@ def generar_horario_automatico():
                 cands = restricted
 
         # Regla asig_unico_prof
-        if regla_unico_prof:
+        # Excepción: si hay múltiples profesores fijados para este curso+asignatura
+        # (cotutores), no se aplica asig_unico_prof — se rota entre ellos
+        # priorizando al que menos horas lleva asignadas.
+        fij_ca_profs = rp_fijar_curso_asig.get((curso_id, asig_id), set())
+        multi_fijados = len(fij_ca_profs) > 1
+        if regla_unico_prof and not multi_fijados:
             prof_ya = asig_prof_asignado.get((curso_id, asig_id))
             if prof_ya is not None:
                 if regla_unico_prof == 'dura':
-                    # Solo puede dar el mismo profesor
                     cands = [prof_ya] if prof_ya in cands else []
                 else:
-                    # Blanda: preferir al mismo profesor, pero si no puede, usar otro
                     if prof_ya in cands:
                         cands = [prof_ya] + [p for p in cands if p != prof_ya]
+        elif multi_fijados and cands:
+            # Cotutores: rotar por el que menos horas lleva
+            cands = sorted(cands, key=lambda p: profesor_horas[p])
 
         # Regla tutor_clase_etapa: en esta etapa el tutor imparte esta asig
         etapa_curso = curso_etapa.get(curso_id)
