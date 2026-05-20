@@ -39,6 +39,13 @@ login_manager.login_view = 'login'
 login_manager.login_message = 'Debes iniciar sesión para acceder.'
 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 
+import traceback as _traceback
+
+@app.errorhandler(500)
+def error_500(e):
+    tb = _traceback.format_exc()
+    return f'<pre style="padding:2rem;white-space:pre-wrap">{tb}</pre>', 500
+
 DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
 
 def parse_etapas(val):
