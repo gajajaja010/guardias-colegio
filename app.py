@@ -2541,7 +2541,13 @@ def init_db():
         db.session.add(ReglaHorario(tipo='asig_unico_prof', dureza='dura'))
         db.session.commit()
 
-    if not Profesor.query.filter_by(es_admin=True).first():
+    # Asegurarse de que el admin no tenga asignaturas ni horario asignado
+    admin = Profesor.query.filter_by(es_admin=True).first()
+    if admin:
+        ProfesorAsignatura.query.filter_by(profesor_id=admin.id).delete()
+        HorarioAsignacion.query.filter_by(profesor_id=admin.id).delete()
+        db.session.commit()
+    else:
         admin = Profesor(
             nombre='Administrador',
             email='admin@colegio.es',
