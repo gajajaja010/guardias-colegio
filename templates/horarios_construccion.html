@@ -952,11 +952,25 @@ function updateReglaFields() {
   var cat = document.querySelector('input[name="cat_regla"]:checked');
   if (!cat) return;
   var val = cat.value;
+
   var show = function(id) { var el = document.getElementById(id); if (el) el.classList.remove('d-none'); };
   var hide = function(id) { var el = document.getElementById(id); if (el) el.classList.add('d-none'); };
 
+  // Disable all inputs in a section so they don't get submitted
+  var disableSec = function(id) {
+    var el = document.getElementById(id);
+    if (el) el.querySelectorAll('input,select,textarea').forEach(function(f){ f.disabled = true; });
+  };
+  var enableSec = function(id) {
+    var el = document.getElementById(id);
+    if (el) el.querySelectorAll('input,select,textarea').forEach(function(f){ f.disabled = false; });
+  };
+
+  // Reset all sections
+  ['secAsig','secProf','secGen'].forEach(function(s){ hide(s); disableSec(s); });
+
   if (val === 'prof') {
-    hide('secAsig'); hide('secGen'); show('secProf');
+    show('secProf'); enableSec('secProf');
     var tipo = document.getElementById('tipoProf').value;
     ['campoCursoProf','campoAsigProf','campoDiaProf','campoFranjaProf','campoValorProf'].forEach(hide);
     if (['prof_excluir_curso','prof_fijar_curso','prof_evitar_curso','prof_preferir_curso'].includes(tipo)) {
@@ -971,9 +985,9 @@ function updateReglaFields() {
         tipo === 'prof_max_horas' ? 'Máximo de horas en el horario' : 'Mínimo de horas en el horario';
     }
   } else if (val === 'gen') {
-    hide('secAsig'); hide('secProf'); show('secGen');
+    show('secGen'); enableSec('secGen');
   } else {
-    show('secAsig'); hide('secProf'); hide('secGen');
+    show('secAsig'); enableSec('secAsig');
     var tipo = document.getElementById('tipoAsig').value;
     ['campoValor','campoDia','campoFranja','infoTutor'].forEach(hide);
     show('campoAsig');
