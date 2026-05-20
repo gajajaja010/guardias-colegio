@@ -257,10 +257,10 @@ class HorarioAsignacion(db.Model):
     profesor2_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=True)
     __table_args__ = (db.UniqueConstraint('curso_id', 'dia', 'franja'),)
     curso = db.relationship('Curso')
-    asignatura = db.relationship('Asignatura', foreign_keys=[asignatura_id])
-    profesor = db.relationship('Profesor', foreign_keys=[profesor_id])
-    asignatura2 = db.relationship('Asignatura', foreign_keys=[asignatura2_id])
-    profesor2 = db.relationship('Profesor', foreign_keys=[profesor2_id])
+    asignatura = db.relationship('Asignatura', foreign_keys=[asignatura_id], overlaps='asignatura2')
+    profesor = db.relationship('Profesor', foreign_keys=[profesor_id], overlaps='profesor2')
+    asignatura2 = db.relationship('Asignatura', foreign_keys=[asignatura2_id], overlaps='asignatura')
+    profesor2 = db.relationship('Profesor', foreign_keys=[profesor2_id], overlaps='profesor')
 
 
 class ReglaHorario(db.Model):
