@@ -648,6 +648,8 @@
               <label class="btn btn-outline-primary btn-sm" for="catAsig"><i class="bi bi-book me-1"></i>Asignatura</label>
               <input type="radio" class="btn-check" name="cat_regla" id="catProf" value="prof" onchange="updateReglaFields()">
               <label class="btn btn-outline-secondary btn-sm" for="catProf"><i class="bi bi-person me-1"></i>Profesor</label>
+              <input type="radio" class="btn-check" name="cat_regla" id="catGen" value="gen" onchange="updateReglaFields()">
+              <label class="btn btn-outline-success btn-sm" for="catGen"><i class="bi bi-mortarboard me-1"></i>Por clase</label>
             </div>
           </div>
 
@@ -758,6 +760,54 @@
             </div>
           </div>
 
+          {# — Reglas generales por clase (etapa) — #}
+          <div id="secGen" class="d-none">
+            <div class="mb-3">
+              <label class="form-label">Tipo</label>
+              <select name="tipo" id="tipoGen" class="form-select">
+                <option value="tutor_clase_etapa">El tutor imparte la asignatura en su etapa</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Etapa educativa</label>
+              <select name="etapa_regla" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for e in etapas %}
+                <option value="{{ e }}">{{ e }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Asignatura</label>
+              <select name="asignatura_id" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for a in asignaturas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Dureza</label>
+              <div class="d-flex gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="dureza" value="dura" id="genDuraDura" checked>
+                  <label class="form-check-label" for="genDuraDura">
+                    <span class="badge bg-danger">Dura</span> — siempre
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="dureza" value="blanda" id="genDuraBlanda">
+                  <label class="form-check-label" for="genDuraBlanda">
+                    <span class="badge bg-secondary">Blanda</span> — preferida
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="alert alert-info small">
+              <i class="bi bi-info-circle me-1"></i>
+              <strong>Dura:</strong> el tutor de la clase siempre imparte esta asignatura en su aula.
+              <strong>Blanda:</strong> se prefiere que sea el tutor, pero puede ser otro.
+            </div>
+          </div>
+
           <button type="submit" class="btn btn-primary w-100">
             <i class="bi bi-plus-lg me-1"></i>Añadir regla
           </button>
@@ -774,7 +824,8 @@
         <span class="badge bg-secondary">{{ reglas|length }}</span>
       </div>
       <div class="card-body p-0">
-        {% set reglas_asig = reglas|rejectattr('profesor_regla')|list %}
+        {% set reglas_gen = reglas|selectattr('tipo','equalto','tutor_clase_etapa')|list %}
+        {% set reglas_asig = reglas|rejectattr('profesor_regla')|rejectattr('tipo','equalto','tutor_clase_etapa')|list %}
         {% set reglas_prof = reglas|selectattr('profesor_regla')|list %}
         {% if reglas %}
 
@@ -847,6 +898,32 @@
         </table>
         {% endif %}
 
+        {% if reglas_gen %}
+        <div class="px-3 pt-3 pb-1 text-muted small fw-semibold text-uppercase border-top">Generales por clase</div>
+        <table class="table table-sm table-hover mb-0">
+          <tbody>
+            {% for r in reglas_gen %}
+            <tr>
+              <td class="align-middle" style="width:130px">
+                <span class="badge {% if r.dureza == 'dura' %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {% if r.dureza == 'dura' %}Dura{% else %}Blanda{% endif %}
+                </span>
+              </td>
+              <td class="align-middle small">
+                <span class="badge bg-info text-dark me-1">{{ r.etapa or '?' }}</span>
+                Tutor imparte <strong>{{ r.asignatura.nombre if r.asignatura else '?' }}</strong>
+              </td>
+              <td class="align-middle text-end">
+                <form method="POST" action="{{ url_for('delete_regla_hc', regla_id=r.id) }}" onsubmit="return confirm('¿Eliminar?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
         {% else %}
         <div class="text-center text-muted py-5">
           <i class="bi bi-sliders display-4"></i>
@@ -874,12 +951,12 @@
 function updateReglaFields() {
   var cat = document.querySelector('input[name="cat_regla"]:checked');
   if (!cat) return;
-  var isProf = cat.value === 'prof';
+  var val = cat.value;
   var show = function(id) { var el = document.getElementById(id); if (el) el.classList.remove('d-none'); };
   var hide = function(id) { var el = document.getElementById(id); if (el) el.classList.add('d-none'); };
 
-  if (isProf) {
-    hide('secAsig'); show('secProf');
+  if (val === 'prof') {
+    hide('secAsig'); hide('secGen'); show('secProf');
     var tipo = document.getElementById('tipoProf').value;
     ['campoCursoProf','campoAsigProf','campoDiaProf','campoFranjaProf','campoValorProf'].forEach(hide);
     if (['prof_excluir_curso','prof_fijar_curso','prof_evitar_curso','prof_preferir_curso'].includes(tipo)) {
@@ -893,8 +970,10 @@ function updateReglaFields() {
       document.getElementById('labelValorProf').textContent =
         tipo === 'prof_max_horas' ? 'Máximo de horas en el horario' : 'Mínimo de horas en el horario';
     }
+  } else if (val === 'gen') {
+    hide('secAsig'); hide('secProf'); show('secGen');
   } else {
-    show('secAsig'); hide('secProf');
+    show('secAsig'); hide('secProf'); hide('secGen');
     var tipo = document.getElementById('tipoAsig').value;
     ['campoValor','campoDia','campoFranja','infoTutor'].forEach(hide);
     show('campoAsig');

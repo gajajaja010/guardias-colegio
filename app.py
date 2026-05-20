@@ -276,6 +276,7 @@ class ReglaHorario(db.Model):
     valor = db.Column(db.Integer, default=1)
     dia = db.Column(db.String(20))
     franja = db.Column(db.String(30))
+    etapa = db.Column(db.String(50))
     asignatura = db.relationship('Asignatura', backref='reglas')
     profesor_regla = db.relationship('Profesor', backref='reglas_horario', foreign_keys=[profesor_id])
     curso_regla = db.relationship('Curso', backref='reglas_horario', foreign_keys=[curso_id_regla])
@@ -1971,6 +1972,7 @@ def add_regla_hc():
     valor = request.form.get('valor', 1, type=int) or 1
     dia = request.form.get('dia', '').strip() or None
     franja = request.form.get('franja', '').strip() or None
+    etapa_regla = request.form.get('etapa_regla', '').strip() or None
 
     if not tipo:
         flash('Tipo de regla requerido.', 'warning')
@@ -1983,27 +1985,29 @@ def add_regla_hc():
         'prof_min_horas', 'prof_max_horas',
     }
 
-    if tipo in TIPOS_PROF and not prof_id:
+    if tipo == 'tutor_clase_etapa':
+        if not etapa_regla:
+            flash('Selecciona una etapa para esta regla.', 'warning')
+            return redirect(url_for('horarios_construccion', tab='reglas'))
+        if not asig_id:
+            flash('Selecciona una asignatura para esta regla.', 'warning')
+            return redirect(url_for('horarios_construccion', tab='reglas'))
+    elif tipo in TIPOS_PROF and not prof_id:
         flash('Selecciona un profesor para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
-
-    if tipo in ('prof_excluir_curso', 'prof_fijar_curso', 'prof_evitar_curso', 'prof_preferir_curso') and not curso_id_r:
+    elif tipo in ('prof_excluir_curso', 'prof_fijar_curso', 'prof_evitar_curso', 'prof_preferir_curso') and not curso_id_r:
         flash('Selecciona un curso para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
-
-    if tipo in ('prof_fijar_asignatura', 'prof_preferir_asignatura') and not asig_id:
+    elif tipo in ('prof_fijar_asignatura', 'prof_preferir_asignatura') and not asig_id:
         flash('Selecciona una asignatura para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
-
-    if tipo in ('prof_excluir_franja', 'prof_evitar_franja') and (not dia or not franja):
+    elif tipo in ('prof_excluir_franja', 'prof_evitar_franja') and (not dia or not franja):
         flash('Selecciona día y franja para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
-
-    if tipo in ('max_dia', 'consecutivas') and not asig_id:
+    elif tipo in ('max_dia', 'consecutivas') and not asig_id:
         flash('Selecciona una asignatura para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
-
-    if tipo == 'fijar_franja' and (not asig_id or not dia or not franja):
+    elif tipo == 'fijar_franja' and (not asig_id or not dia or not franja):
         flash('Selecciona asignatura, día y franja para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
 
@@ -2011,7 +2015,8 @@ def add_regla_hc():
         tipo=tipo, dureza=dureza,
         asignatura_id=asig_id, profesor_id=prof_id,
         curso_id_regla=curso_id_r,
-        valor=valor, dia=dia, franja=franja
+        valor=valor, dia=dia, franja=franja,
+        etapa=etapa_regla
     ))
     db.session.commit()
     flash('Regla añadida.', 'success')
@@ -2196,6 +2201,7 @@ def init_db():
         'ALTER TABLE profesor ADD COLUMN es_educador BOOLEAN DEFAULT FALSE',
         'ALTER TABLE profesor ADD COLUMN horas_pt REAL DEFAULT 0',
         'ALTER TABLE profesor ADD COLUMN horas_educador REAL DEFAULT 0',
+        'ALTER TABLE regla_horario ADD COLUMN etapa VARCHAR(50)',
     ]
     for sql in migrations:
         try:
