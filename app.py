@@ -1421,16 +1421,24 @@ def importar_datos_iniciales():
             creados['cursos'] += 1
     db.session.flush()
 
-    todas_asigs = set()
-    for asigs in _SEED_HORARIO.values():
-        todas_asigs.update(asigs.keys())
-    for nombre in todas_asigs:
-        if not Asignatura.query.filter_by(nombre=nombre).first():
-            db.session.add(Asignatura(nombre=nombre))
+    # Determinar etapa de cada asignatura según en qué cursos aparece
+    _etapa_asig = {}
+    for curso_nombre, asigs in _SEED_HORARIO.items():
+        etapa = 'Haur Hezkuntza' if curso_nombre.startswith('HH') else 'Lehen Hezkuntza'
+        for nombre in asigs:
+            _etapa_asig.setdefault(nombre, etapa)
+
+    for nombre, etapa in _etapa_asig.items():
+        asig = Asignatura.query.filter_by(nombre=nombre).first()
+        if not asig:
+            db.session.add(Asignatura(nombre=nombre, etapa=etapa))
             creados['asignaturas'] += 1
+        else:
+            if not asig.etapa:
+                asig.etapa = etapa
     db.session.flush()
 
-    forzar = request.args.get('forzar') == '1'
+    # Upsert todas las asignaciones con las horas correctas (siempre actualiza)
     for curso_nombre, asigs in _SEED_HORARIO.items():
         curso = Curso.query.filter_by(nombre=curso_nombre).first()
         if not curso:
@@ -1442,16 +1450,14 @@ def importar_datos_iniciales():
             existing = CursoAsignatura.query.filter_by(
                 curso_id=curso.id, asignatura_id=asig.id).first()
             if existing:
-                if forzar:
-                    existing.horas_semanales = horas
-                    creados['asignaciones'] += 1
+                existing.horas_semanales = float(horas)
             else:
                 db.session.add(CursoAsignatura(
-                    curso_id=curso.id, asignatura_id=asig.id, horas_semanales=horas))
-                creados['asignaciones'] += 1
+                    curso_id=curso.id, asignatura_id=asig.id, horas_semanales=float(horas)))
+            creados['asignaciones'] += 1
     db.session.commit()
     flash(f'Importación completada: {creados["cursos"]} cursos, '
-          f'{creados["asignaturas"]} asignaturas, {creados["asignaciones"]} asignaciones.', 'success')
+          f'{creados["asignaturas"]} asignaturas, {creados["asignaciones"]} asignaciones actualizadas.', 'success')
     return redirect(url_for('horarios_construccion', tab='asignaturas'))
 
 
