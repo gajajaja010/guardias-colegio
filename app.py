@@ -522,28 +522,29 @@ def _guardar_grupos_profesor(profesor_id, form):
             db.session.add(ProfesorGrupo(profesor_id=profesor_id, grupo_id=g.id, horas_semanales=horas))
 
 
+LH_ESPECIFICAS = {'Inglés', 'Música', 'Francés', 'Gimnasia', 'Religión'}
+HH_BASE = ['CEA', 'CRR', 'DEE']
+
+
 def _auto_asignar_asignaturas(profesor):
-    """Asigna automáticamente asignaturas según etapa y materias especiales."""
-    LH_BASE = ['Mate', 'Euskera', 'Inguru', 'Tutoretza', 'Plastika']
-    HH_BASE = ['CEA', 'CRR', 'DEE']
-
+    """Asigna automáticamente asignaturas según etapa: todas las de primaria salvo las específicas."""
     etapas = parse_etapas(profesor.etapa)
-    materias = json.loads(profesor.materias_especiales or '[]')
 
-    nombres = set()
+    asig_ids = set()
     if 'Lehen Hezkuntza' in etapas:
-        nombres.update(LH_BASE)
-        nombres.update(materias)
+        # Todas las asignaturas de primaria excepto las específicas
+        for asig in Asignatura.query.filter_by(etapa='Lehen Hezkuntza').all():
+            if asig.nombre not in LH_ESPECIFICAS:
+                asig_ids.add(asig.id)
     if 'Haur Hezkuntza' in etapas:
-        nombres.update(HH_BASE)
-        nombres.update(materias)
+        for nombre in HH_BASE:
+            asig = Asignatura.query.filter_by(nombre=nombre).first()
+            if asig:
+                asig_ids.add(asig.id)
 
-    # Borrar asignaciones actuales y reconstruir
     ProfesorAsignatura.query.filter_by(profesor_id=profesor.id).delete()
-    for nombre in nombres:
-        asig = Asignatura.query.filter_by(nombre=nombre).first()
-        if asig:
-            db.session.add(ProfesorAsignatura(profesor_id=profesor.id, asignatura_id=asig.id))
+    for asig_id in asig_ids:
+        db.session.add(ProfesorAsignatura(profesor_id=profesor.id, asignatura_id=asig_id))
 
 
 @app.route('/profesores')
@@ -1416,6 +1417,19 @@ _SEED_HORARIO = {
             'Música':1,'Inguru':3,'Religión':2,'Valores':2,'Mate':3,'Francés':1,
             'Tutoretza':1,'Plastika':1},
 }
+
+@app.route('/admin/autoasignar-asignaturas')
+@login_required
+def autoasignar_asignaturas_todos():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    profesores = Profesor.query.filter_by(activo=True, es_admin=False).all()
+    for p in profesores:
+        _auto_asignar_asignaturas(p)
+    db.session.commit()
+    flash(f'Asignaturas actualizadas para {len(profesores)} profesores.', 'success')
+    return redirect(url_for('horarios_construccion', tab='profesores'))
+
 
 @app.route('/admin/importar-datos-iniciales')
 @login_required

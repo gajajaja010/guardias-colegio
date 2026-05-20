@@ -193,6 +193,14 @@
   </div>
 {% endif %}
 
+<div class="d-flex justify-content-end mb-3">
+  <a href="{{ url_for('autoasignar_asignaturas_todos') }}"
+     class="btn btn-outline-primary btn-sm"
+     onclick="return confirm('¿Aplicar asignaturas por defecto a todos los profesores? Se sobreescribirán las asignaturas actuales.')">
+    <i class="bi bi-magic me-1"></i>Aplicar asignaturas por defecto a todos
+  </a>
+</div>
+
 <div class="row g-3">
   {% for prof in profesores %}
   <div class="col-12">
