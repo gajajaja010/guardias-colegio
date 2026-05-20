@@ -1430,6 +1430,7 @@ def importar_datos_iniciales():
             creados['asignaturas'] += 1
     db.session.flush()
 
+    forzar = request.args.get('forzar') == '1'
     for curso_nombre, asigs in _SEED_HORARIO.items():
         curso = Curso.query.filter_by(nombre=curso_nombre).first()
         if not curso:
@@ -1440,7 +1441,11 @@ def importar_datos_iniciales():
                 continue
             existing = CursoAsignatura.query.filter_by(
                 curso_id=curso.id, asignatura_id=asig.id).first()
-            if not existing:
+            if existing:
+                if forzar:
+                    existing.horas_semanales = horas
+                    creados['asignaciones'] += 1
+            else:
                 db.session.add(CursoAsignatura(
                     curso_id=curso.id, asignatura_id=asig.id, horas_semanales=horas))
                 creados['asignaciones'] += 1
