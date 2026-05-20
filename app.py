@@ -1519,14 +1519,15 @@ def generar_horario_automatico():
     reglas_tutor_etapa_blanda = defaultdict(set) # etapa -> set(asig_id)
 
     # Cargar reglas de profesor
-    rp_excluir_curso = defaultdict(set)       # curso_id -> profs excluidos (dura)
-    rp_fijar_curso = defaultdict(set)         # curso_id -> profs forzados (dura)
-    rp_excluir_franja = defaultdict(set)      # (dia,franja) -> profs excluidos (dura)
-    rp_fijar_asignatura = defaultdict(set)    # asig_id -> profs forzados (dura)
-    rp_evitar_curso = defaultdict(set)        # curso_id -> profs a evitar (blanda)
-    rp_preferir_curso = defaultdict(set)      # curso_id -> profs preferidos (blanda)
-    rp_evitar_franja = defaultdict(set)       # (dia,franja) -> profs a evitar (blanda)
-    rp_preferir_asignatura = defaultdict(set) # asig_id -> profs preferidos (blanda)
+    rp_excluir_curso = defaultdict(set)        # curso_id -> profs excluidos (dura)
+    rp_fijar_curso = defaultdict(set)          # curso_id -> profs forzados (dura)
+    rp_excluir_franja = defaultdict(set)       # (dia,franja) -> profs excluidos (dura)
+    rp_fijar_asignatura = defaultdict(set)     # asig_id -> profs forzados (dura)
+    rp_fijar_curso_asig = defaultdict(set)     # (curso_id, asig_id) -> profs forzados (dura)
+    rp_evitar_curso = defaultdict(set)         # curso_id -> profs a evitar (blanda)
+    rp_preferir_curso = defaultdict(set)       # curso_id -> profs preferidos (blanda)
+    rp_evitar_franja = defaultdict(set)        # (dia,franja) -> profs a evitar (blanda)
+    rp_preferir_asignatura = defaultdict(set)  # asig_id -> profs preferidos (blanda)
     rp_min_horas = {}                         # prof_id -> min horas guardia
     rp_max_horas = {}                         # prof_id -> max horas guardia
 
@@ -1556,6 +1557,8 @@ def generar_horario_automatico():
                 rp_excluir_franja[(r.dia, r.franja)].add(pid)
             elif r.tipo == 'prof_fijar_asignatura' and r.asignatura_id:
                 rp_fijar_asignatura[r.asignatura_id].add(pid)
+            elif r.tipo == 'prof_fijar_curso_asignatura' and r.curso_id_regla and r.asignatura_id:
+                rp_fijar_curso_asig[(r.curso_id_regla, r.asignatura_id)].add(pid)
             elif r.tipo == 'prof_evitar_curso' and r.curso_id_regla:
                 rp_evitar_curso[r.curso_id_regla].add(pid)
             elif r.tipo == 'prof_preferir_curso' and r.curso_id_regla:
@@ -1695,6 +1698,13 @@ def generar_horario_automatico():
             if restricted:
                 cands = restricted
 
+        # Si hay profs forzados para este curso+asignatura, restringir a ellos (más específico)
+        fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
+        if fij_ca:
+            restricted = [p for p in cands if p in fij_ca]
+            if restricted:
+                cands = restricted
+
         # Regla asig_unico_prof
         if regla_unico_prof:
             prof_ya = asig_prof_asignado.get((curso_id, asig_id))
@@ -1798,6 +1808,11 @@ def generar_horario_automatico():
                 fij_a = rp_fijar_asignatura.get(asig_id, set())
                 if fij_a:
                     r = [p for p in common if p in fij_a]
+                    if r:
+                        common = r
+                fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
+                if fij_ca:
+                    r = [p for p in common if p in fij_ca]
                     if r:
                         common = r
                 if not common:
@@ -2307,7 +2322,7 @@ def add_regla_hc():
 
     TIPOS_PROF = {
         'prof_excluir_curso', 'prof_fijar_curso', 'prof_evitar_curso', 'prof_preferir_curso',
-        'prof_excluir_franja', 'prof_fijar_asignatura',
+        'prof_excluir_franja', 'prof_fijar_asignatura', 'prof_fijar_curso_asignatura',
         'prof_evitar_franja', 'prof_preferir_asignatura',
         'prof_min_horas', 'prof_max_horas',
     }
@@ -2324,6 +2339,9 @@ def add_regla_hc():
         return redirect(url_for('horarios_construccion', tab='reglas'))
     elif tipo in ('prof_excluir_curso', 'prof_fijar_curso', 'prof_evitar_curso', 'prof_preferir_curso') and not curso_id_r:
         flash('Selecciona un curso para esta regla.', 'warning')
+        return redirect(url_for('horarios_construccion', tab='reglas'))
+    elif tipo == 'prof_fijar_curso_asignatura' and (not curso_id_r or not asig_id):
+        flash('Selecciona un curso y una asignatura para esta regla.', 'warning')
         return redirect(url_for('horarios_construccion', tab='reglas'))
     elif tipo in ('prof_fijar_asignatura', 'prof_preferir_asignatura') and not asig_id:
         flash('Selecciona una asignatura para esta regla.', 'warning')

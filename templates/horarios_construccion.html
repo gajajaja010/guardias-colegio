@@ -799,6 +799,7 @@
               <select name="tipo" id="tipoProf" class="form-select" onchange="updateReglaFields()">
                 <option value="prof_excluir_curso" data-dureza="dura">Excluir de un curso</option>
                 <option value="prof_fijar_curso" data-dureza="dura">Fijar a un curso</option>
+                <option value="prof_fijar_curso_asignatura" data-dureza="dura">Fijar a curso+asignatura</option>
                 <option value="prof_excluir_franja" data-dureza="dura">Excluir de día+franja</option>
                 <option value="prof_fijar_asignatura" data-dureza="dura">Fijar a una asignatura</option>
                 <option value="prof_max_horas" data-dureza="dura">Máximo N horas en el horario</option>
@@ -989,7 +990,7 @@
             {% for r in reglas_prof %}
             <tr>
               <td class="align-middle" style="width:130px">
-                {% set es_dura = r.tipo in ('prof_excluir_curso','prof_fijar_curso','prof_excluir_franja','prof_fijar_asignatura','prof_min_horas','prof_max_horas') %}
+                {% set es_dura = r.tipo in ('prof_excluir_curso','prof_fijar_curso','prof_fijar_curso_asignatura','prof_excluir_franja','prof_fijar_asignatura','prof_min_horas','prof_max_horas') %}
                 <span class="badge {% if es_dura %}bg-danger{% else %}bg-secondary{% endif %}">
                   {% if es_dura %}Dura{% else %}Blanda{% endif %}
                 </span>
@@ -1000,6 +1001,7 @@
                 {% elif r.tipo == 'prof_fijar_curso' %}Sí o sí en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
                 {% elif r.tipo == 'prof_excluir_franja' %}Nunca {{ r.dia }} {{ r.franja }}
                 {% elif r.tipo == 'prof_fijar_asignatura' %}Sí o sí imparte {{ r.asignatura.nombre if r.asignatura else '?' }}
+                {% elif r.tipo == 'prof_fijar_curso_asignatura' %}Sí o sí imparte {{ r.asignatura.nombre if r.asignatura else '?' }} en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
                 {% elif r.tipo == 'prof_max_horas' %}Máx {{ r.valor }}h en horario
                 {% elif r.tipo == 'prof_min_horas' %}Mín {{ r.valor }}h en horario
                 {% elif r.tipo == 'prof_evitar_curso' %}Intentar no poner en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
@@ -1096,6 +1098,8 @@ function updateReglaFields() {
     ['campoCursoProf','campoAsigProf','campoDiaProf','campoFranjaProf','campoValorProf'].forEach(hide);
     if (['prof_excluir_curso','prof_fijar_curso','prof_evitar_curso','prof_preferir_curso'].includes(tipo)) {
       show('campoCursoProf');
+    } else if (tipo === 'prof_fijar_curso_asignatura') {
+      show('campoCursoProf'); show('campoAsigProf');
     } else if (['prof_fijar_asignatura','prof_preferir_asignatura'].includes(tipo)) {
       show('campoAsigProf');
     } else if (['prof_excluir_franja','prof_evitar_franja'].includes(tipo)) {
