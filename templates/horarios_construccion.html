@@ -364,13 +364,13 @@
   </form>
   <form method="post" action="{{ url_for('generar_complementarias_hc') }}">
     <button type="submit" class="btn btn-secondary btn-sm">
-      <i class="bi bi-clock me-1"></i>Generar complementarias
+      <i class="bi bi-people-fill me-1"></i>Asignar grupos de trabajo
     </button>
   </form>
   <form method="post" action="{{ url_for('limpiar_complementarias_hc') }}"
-        onsubmit="return confirm('¿Borrar slots complementarios?')">
+        onsubmit="return confirm('¿Borrar asignaciones de grupos de trabajo?')">
     <button type="submit" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-trash me-1"></i>Limpiar comp.
+      <i class="bi bi-trash me-1"></i>Limpiar grupos
     </button>
   </form>
   {% endif %}
@@ -450,9 +450,9 @@
             {% else %}
               {% for dia in dias %}
               {% set asig = horario_prof_grid.get((dia, franja)) %}
-              {% set comp = comp_grid.get((dia, franja)) %}
+              {% set grupo_slot = comp_grid.get((dia, franja)) %}
               <td class="align-middle p-1" style="min-width:120px;
-                {% if comp and not asig %}background:#f0f4f8;{% endif %}">
+                {% if not asig %}background:#f8f9fa;{% endif %}">
                 {% if asig %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
@@ -461,23 +461,21 @@
                   </span>
                   <small class="text-muted" style="font-size:.72rem;">{{ asig.curso.nombre }}</small>
                 </div>
-                {% elif comp %}
+                {% elif grupo_slot and grupo_slot.grupo_rel %}
                 <div class="d-flex flex-column align-items-center gap-1">
-                  {% if comp.tipo == 'grupo' and comp.grupo_rel %}
-                    <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
-                          style="background:#6c757d; font-size:.8rem;">
-                      <i class="bi bi-people-fill me-1"></i>{{ comp.grupo_rel.nombre }}
-                    </span>
-                    <small class="text-muted" style="font-size:.72rem;">Grupo de trabajo</small>
-                  {% else %}
-                    <span class="badge rounded-pill px-2 py-1 w-100"
-                          style="background:#adb5bd; font-size:.8rem;">
-                      <i class="bi bi-clock me-1"></i>Complementaria
-                    </span>
-                  {% endif %}
+                  <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
+                        style="background:#5c6bc0; font-size:.8rem;">
+                    <i class="bi bi-people-fill me-1"></i>{{ grupo_slot.grupo_rel.nombre }}
+                  </span>
+                  <small class="text-muted" style="font-size:.72rem;">Grupo de trabajo</small>
                 </div>
                 {% else %}
-                <span class="text-muted small">—</span>
+                <div class="d-flex flex-column align-items-center gap-1">
+                  <span class="badge rounded-pill px-2 py-1 w-100"
+                        style="background:#adb5bd; font-size:.8rem;">
+                    <i class="bi bi-clock me-1"></i>Complementaria
+                  </span>
+                </div>
                 {% endif %}
               </td>
               {% endfor %}

@@ -2106,15 +2106,12 @@ def generar_complementarias_hc():
         if asig.profesor2_id:
             prof_ocupado[asig.profesor2_id].add((asig.dia, asig.franja))
 
-    prof_slots_comp = defaultdict(int)  # cuántos slots de comp ya tiene cada prof
-
-    # Paso 1: grupos de trabajo — todos los miembros deben coincidir
+    # Grupos de trabajo — todos los miembros deben coincidir en el mismo slot
     for grupo in GrupoTrabajo.query.order_by(GrupoTrabajo.id).all():
         miembros = ProfesorGrupo.query.filter_by(grupo_id=grupo.id).all()
         if not miembros:
             continue
         prof_ids = [m.profesor_id for m in miembros]
-        # Número de slots semanales del grupo = máximo de horas entre miembros (redondeado)
         n_slots = math.ceil(max(m.horas_semanales for m in miembros))
         slots_s = slots_all[:]
         random.shuffle(slots_s)
@@ -2130,31 +2127,10 @@ def generar_complementarias_hc():
                         tipo='grupo', grupo_id=grupo.id
                     ))
                     prof_ocupado[pid].add(slot)
-                    prof_slots_comp[pid] += 1
-                colocados += 1
-
-    # Paso 2: horas libres individuales restantes
-    for prof in Profesor.query.filter_by(activo=True, de_baja=False).all():
-        total_libres = math.ceil(prof.horas_libres or 0)
-        ya_asignados = prof_slots_comp[prof.id]
-        n_libre = max(0, total_libres - ya_asignados)
-        slots_s = slots_all[:]
-        random.shuffle(slots_s)
-        colocados = 0
-        for dia, franja in slots_s:
-            if colocados >= n_libre:
-                break
-            slot = (dia, franja)
-            if slot not in prof_ocupado[prof.id]:
-                db.session.add(SlotComplementaria(
-                    profesor_id=prof.id, dia=dia, franja=franja,
-                    tipo='libre'
-                ))
-                prof_ocupado[prof.id].add(slot)
                 colocados += 1
 
     db.session.commit()
-    flash('Slots complementarios generados.', 'success')
+    flash('Grupos de trabajo asignados correctamente.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario', vista='profesor'))
 
 
@@ -2165,7 +2141,7 @@ def limpiar_complementarias_hc():
         return redirect(url_for('dashboard'))
     SlotComplementaria.query.delete()
     db.session.commit()
-    flash('Slots complementarios borrados.', 'success')
+    flash('Asignaciones de grupos de trabajo borradas.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario', vista='profesor'))
 
 
