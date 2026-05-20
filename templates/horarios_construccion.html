@@ -475,7 +475,14 @@
                         style="background:#5c6bc0; font-size:.8rem;">
                     <i class="bi bi-people-fill me-1"></i>{{ slot_c.grupo_rel.nombre }}
                   </span>
+                  {% if slot_c.tipo2 == 'libre' %}
+                  <span class="badge rounded-pill px-2 py-1 w-100"
+                        style="background:#adb5bd; font-size:.75rem;">
+                    <i class="bi bi-clock me-1"></i>½ Compl.
+                  </span>
+                  {% else %}
                   <small class="text-muted" style="font-size:.72rem;">Grupo de trabajo</small>
+                  {% endif %}
                 </div>
                 {% elif slot_c and slot_c.tipo == 'libre' %}
                 <div class="d-flex flex-column align-items-center gap-1">

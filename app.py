@@ -159,6 +159,7 @@ class SlotComplementaria(db.Model):
     franja = db.Column(db.String(30), nullable=False)
     tipo = db.Column(db.String(20), default='libre')  # 'libre' | 'grupo'
     grupo_id = db.Column(db.Integer, db.ForeignKey('grupo_trabajo.id'), nullable=True)
+    tipo2 = db.Column(db.String(20), nullable=True)   # 'libre' when second half is complementaria
     profesor = db.relationship('Profesor', backref='slots_complementaria')
     grupo_rel = db.relationship('GrupoTrabajo')
 
@@ -2221,8 +2222,14 @@ def _asignar_grupos_trabajo():
                     colocados_extra += 1
 
     # Slots de complementaria libre individual (int = floor, para respetar 2.5 → 2 slots)
+    # La fracción de 0.5 se combina con un slot de grupo existente (tipo2='libre')
+    profs_con_fraccion = []
     for prof in Profesor.query.filter_by(activo=True, de_baja=False, es_admin=False).all():
-        n_libre = int(prof.horas_libres or 0)
+        horas = prof.horas_libres or 0
+        n_libre = int(horas)
+        fraccion = horas - n_libre  # 0.0 o 0.5
+        if fraccion >= 0.5:
+            profs_con_fraccion.append(prof.id)
         if n_libre <= 0:
             continue
         slots_s = slots_all[:]
@@ -2239,6 +2246,17 @@ def _asignar_grupos_trabajo():
                 ))
                 prof_ocupado[prof.id].add(slot)
                 colocados += 1
+
+    # Flush para que los slots de grupo estén disponibles en la sesión
+    db.session.flush()
+
+    # Para profesores con fracción de 0.5h libre, marcar un slot de grupo como tipo2='libre'
+    for pid in profs_con_fraccion:
+        grupo_slot = SlotComplementaria.query.filter_by(
+            profesor_id=pid, tipo='grupo'
+        ).filter(SlotComplementaria.tipo2.is_(None)).first()
+        if grupo_slot:
+            grupo_slot.tipo2 = 'libre'
 
     db.session.commit()
     return len(grupos)
@@ -2529,6 +2547,7 @@ def init_db():
         )""",
         # Asignaturas que aparecen en HH y LH deben tener etapa NULL
         "UPDATE asignatura SET etapa = NULL WHERE nombre IN ('Inglés','Religión') AND etapa IS NOT NULL",
+        'ALTER TABLE slot_complementaria ADD COLUMN tipo2 VARCHAR(20)',
     ]
     for sql in migrations:
         try:
