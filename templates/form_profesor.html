@@ -103,7 +103,7 @@
                 <input class="form-check-input mt-0" type="checkbox"
                   name="grupo_{{ g.id }}" id="grupo_{{ g.id }}" value="1"
                   {% if horas_actuales %}checked{% endif %}
-                  onchange="this.nextElementSibling.disabled=!this.checked">
+                  onchange="this.closest('.d-flex').querySelector('input[type=number]').disabled=!this.checked">
                 <label class="form-check-label flex-grow-1" for="grupo_{{ g.id }}">{{ g.nombre }}</label>
                 <input type="number" name="grupo_horas_{{ g.id }}"
                   class="form-control form-control-sm" style="width:90px"
