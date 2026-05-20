@@ -17,7 +17,7 @@
         <tr>
           <th>Nombre</th>
           <th>Email</th>
-          <th>Especialidad</th>
+          <th>Etapas</th>
           <th>Guardias</th>
           <th>Estado</th>
           <th></th>
@@ -32,7 +32,15 @@
             {% if p.es_especialista %}<span class="badge bg-info ms-1">Especialista</span>{% endif %}
           </td>
           <td>{{ p.email }}</td>
-          <td>{{ p.etapa or '—' }}</td>
+          <td>
+            {% set etapas = p.etapa | from_json %}
+            {% if etapas %}
+              {% for e in etapas %}<span class="badge bg-light text-dark border me-1">{{ e }}</span>{% endfor %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+            {% if p.es_pt %}<span class="badge bg-warning text-dark ms-1">PT</span>{% endif %}
+          </td>
           <td>
             <span class="badge bg-secondary">{{ p.total_guardias }}</span>
           </td>
