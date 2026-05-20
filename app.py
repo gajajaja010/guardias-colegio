@@ -1832,28 +1832,38 @@ def generar_horario_automatico():
         for _ in range(n - colocados):
             sin_asignar.append((curso_id, asig_id))
 
-    # Paso 3: tareas normales — round-robin por curso para reparto equitativo
+    # Paso 3: tareas normales — primero las fijadas (curso+asignatura), luego round-robin
     slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
 
-    # Agrupar por curso y ordenar dentro de cada curso:
-    # 1º tareas con regla fijar_curso_asignatura (más prioritarias),
-    # 2º las más restringidas en general (menos candidatos)
-    tasks_by_course = defaultdict(list)
+    # Separar tareas fijadas (prof_fijar_curso_asignatura) de las libres.
+    # Las fijadas se procesan globalmente primero, porque sus profesores tienen
+    # un presupuesto de horas reservado para esos slots y no deben consumirlo
+    # en otras clases.
+    fixed_tasks_list = []
+    free_tasks_list = []
     for curso_id, asig_id in normal_tasks:
+        if rp_fijar_curso_asig.get((curso_id, asig_id)):
+            fixed_tasks_list.append((curso_id, asig_id))
+        else:
+            free_tasks_list.append((curso_id, asig_id))
+
+    # Las fijadas: ordenar por número de profesores disponibles (más restrictivas primero)
+    fixed_tasks_list.sort(key=lambda t: len(rp_fijar_curso_asig.get((t[0], t[1]), set())))
+
+    # Las libres: round-robin por curso, más restringidas primero dentro de cada curso
+    tasks_by_course = defaultdict(list)
+    for curso_id, asig_id in free_tasks_list:
         tasks_by_course[curso_id].append((curso_id, asig_id))
     for cid in tasks_by_course:
-        tasks_by_course[cid].sort(key=lambda t: (
-            0 if rp_fijar_curso_asig.get((t[0], t[1])) else 1,
-            len(prof_por_asig.get(t[1], []))
-        ))
-
-    # Entrelazar cursos en round-robin
+        tasks_by_course[cid].sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
     curso_queues = list(tasks_by_course.values())
-    ordered_tasks = []
+    free_ordered = []
     while any(q for q in curso_queues):
         for q in curso_queues:
             if q:
-                ordered_tasks.append(q.pop(0))
+                free_ordered.append(q.pop(0))
+
+    ordered_tasks = fixed_tasks_list + free_ordered
 
     pending_retry = []
     for curso_id, asig_id in ordered_tasks:
