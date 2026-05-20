@@ -1619,7 +1619,11 @@ def generar_horario_automatico():
     curso_ocupado = defaultdict(set)
     profesor_horas = defaultdict(int)
     asig_dia_count = defaultdict(int)  # (curso_id, asig_id, dia) -> count
-    prof_max = {p.id: p.horas_max_semanales or 25 for p in profesores_activos}
+    # Límite de horas lectivas: usa horas_lectivas si está configurado, si no horas_max_semanales
+    prof_max = {
+        p.id: int(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
+        for p in profesores_activos
+    }
     # Override max horas from prof rules
     for pid, mx in rp_max_horas.items():
         prof_max[pid] = mx
@@ -1851,7 +1855,7 @@ def generar_horario_automatico():
             cands_relaxed = [pid for pid in prof_por_asig.get(asig_id, [])
                              if etapa_compatible(pid, asig_id)
                              and slot not in profesor_ocupado[pid]
-                             and profesor_horas[pid] < prof_max.get(pid, 25) + 2]
+                             and profesor_horas[pid] < prof_max.get(pid, 25)]
             if cands_relaxed:
                 do_assign(curso_id, asig_id, dia, franja, cands_relaxed[0])
                 asignado = True
