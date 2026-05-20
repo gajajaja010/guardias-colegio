@@ -20,8 +20,8 @@
             <tr>
               <th>Curso</th>
               <th>Etapa</th>
-              <th>Tutor/a asignado/a</th>
-              <th style="width:180px">Cambiar tutor</th>
+              <th>Tutores asignados</th>
+              <th style="width:220px">Añadir tutor</th>
               <th style="width:60px"></th>
             </tr>
           </thead>
@@ -44,8 +44,20 @@
                 {% endif %}
               </td>
               <td class="align-middle">
-                {% if tutores[c.nombre] %}
-                <span class="badge bg-success">{{ tutores[c.nombre].nombre }}</span>
+                {% set lista = tutores[c.nombre] %}
+                {% if lista %}
+                  {% for t in lista %}
+                  <form method="POST" class="d-inline">
+                    <input type="hidden" name="accion" value="remove_tutor">
+                    <input type="hidden" name="profesor_id" value="{{ t.id }}">
+                    <span class="badge bg-success me-1">
+                      {{ t.nombre }}
+                      <button type="submit" class="btn-close btn-close-white ms-1"
+                        style="font-size:.55em;vertical-align:middle;"
+                        title="Quitar tutor"></button>
+                    </span>
+                  </form>
+                  {% endfor %}
                 {% else %}
                 <span class="text-muted small">Sin tutor</span>
                 {% endif %}
@@ -54,17 +66,17 @@
                 <form method="POST" class="d-flex gap-1">
                   <input type="hidden" name="accion" value="assign_tutor">
                   <input type="hidden" name="curso_id" value="{{ c.id }}">
+                  {% set asignados_ids = tutores[c.nombre] | map(attribute='id') | list %}
                   <select name="profesor_id" class="form-select form-select-sm">
-                    <option value="">— Sin tutor —</option>
+                    <option value="">— Seleccionar —</option>
                     {% for p in profesores %}
-                    <option value="{{ p.id }}"
-                      {{ 'selected' if tutores[c.nombre] and tutores[c.nombre].id == p.id }}>
-                      {{ p.nombre }}
-                    </option>
+                    {% if p.id not in asignados_ids %}
+                    <option value="{{ p.id }}">{{ p.nombre }}</option>
+                    {% endif %}
                     {% endfor %}
                   </select>
-                  <button type="submit" class="btn btn-sm btn-outline-primary" title="Guardar">
-                    <i class="bi bi-check-lg"></i>
+                  <button type="submit" class="btn btn-sm btn-outline-primary" title="Añadir">
+                    <i class="bi bi-plus-lg"></i>
                   </button>
                 </form>
               </td>

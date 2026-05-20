@@ -199,7 +199,7 @@ class ProfesorEspecialidad(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
     nombre = db.Column(db.String(50), nullable=False)
-    horas_semanales = db.Column(db.Integer, default=0)
+    horas_semanales = db.Column(db.Float, default=0)
     __table_args__ = (db.UniqueConstraint('profesor_id', 'nombre'),)
     profesor = db.relationship('Profesor', backref='especialidades')
 
@@ -208,7 +208,7 @@ class CursoAsignatura(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     curso_id = db.Column(db.Integer, db.ForeignKey('curso.id'), nullable=False)
     asignatura_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=False)
-    horas_semanales = db.Column(db.Integer, default=1)
+    horas_semanales = db.Column(db.Float, default=1)
     __table_args__ = (db.UniqueConstraint('curso_id', 'asignatura_id'),)
     curso = db.relationship('Curso', backref='requisitos')
     asignatura = db.relationship('Asignatura', backref='curso_requisitos')
@@ -485,7 +485,10 @@ def nuevo_profesor():
         return redirect(url_for('profesores'))
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
-        if Profesor.query.filter_by(email=email).first():
+        if not email:
+            import uuid
+            email = f'sin-email-{uuid.uuid4().hex[:8]}@pendiente.local'
+        elif Profesor.query.filter_by(email=email).first():
             flash('Ya existe un profesor con ese email.', 'danger')
             cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
             return render_template('form_profesor.html', profesor=None, cursos=cursos)
@@ -1232,25 +1235,97 @@ def tutorias():
             curso_id = int(request.form.get('curso_id', 0))
             profesor_id = request.form.get('profesor_id', '')
             curso = Curso.query.get_or_404(curso_id)
-            # Quitar a quien tenía este curso antes
-            Profesor.query.filter_by(aula_tutoria=curso.nombre).update({'aula_tutoria': None})
             if profesor_id:
                 p = Profesor.query.get_or_404(int(profesor_id))
                 p.aula_tutoria = curso.nombre
+                db.session.commit()
+                flash('Tutor añadido.', 'success')
+
+        elif accion == 'remove_tutor':
+            profesor_id = int(request.form.get('profesor_id', 0))
+            p = Profesor.query.get_or_404(profesor_id)
+            p.aula_tutoria = None
             db.session.commit()
-            flash('Tutor actualizado.', 'success')
+            flash('Tutor eliminado.', 'success')
 
         return redirect(url_for('tutorias'))
 
     cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
     profesores_lista = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
-    # Mapear curso -> tutor
     tutores = {
-        c.nombre: Profesor.query.filter_by(aula_tutoria=c.nombre).first()
+        c.nombre: Profesor.query.filter_by(aula_tutoria=c.nombre).all()
         for c in cursos
     }
     return render_template('tutorias.html',
         cursos=cursos, profesores=profesores_lista, tutores=tutores)
+
+
+# ───────────────────────────── SEED DATOS ─────────────────────────────
+
+_SEED_HORARIO = {
+    'HH1': {'Religión':2,'Inglés':2,'CRR':12,'CEA':6,'DEE':3},
+    'HH2': {'Religión':2,'Inglés':2,'CRR':13,'CEA':5,'DEE':3},
+    'HH3': {'Religión':2,'Inglés':2,'CRR':12,'CEA':6,'DEE':3},
+    'LH1': {'Euskera':4,'Inglés':3,'Gimnasia':2,'Lengua':3.5,'Lectura Lengua':0.5,
+            'Música':1,'Inguru':3,'Religión':2,'Mate':4,'Tutoretza':1,'Plastika':1},
+    'LH2': {'Euskera':3,'Inglés':3,'Gimnasia':3,'Lengua':3.5,'Lectura Lengua':0.5,
+            'Música':1,'Inguru':3,'Religión':2,'Mate':4,'Tutoretza':1,'Plastika':1},
+    'LH3': {'Euskera':4,'Mate':4,'Inglés':3,'Gimnasia':2,'Música':1,'Inguru':4,
+            'Tutoretza':1,'Lengua':3,'Religión':2,'Plastika':1},
+    'LH4': {'Euskera':4,'Inglés':3,'Gimnasia':2,'Lengua':4,'Música':1,'Inguru':3,
+            'Religión':2,'Mate':4,'Tutoretza':1,'Plastika':1},
+    'LH5': {'Euskera':3.5,'Lectura Euskera':0.5,'Inglés':2,'Gimnasia':2,'Lengua':4,
+            'Música':1,'Inguru':4,'Religión':2,'Mate':3,'Francés':1,'Tutoretza':1,'Plastika':1},
+    'LH6': {'Euskera':2.5,'Lectura Euskera':0.5,'Inglés':3,'Gimnasia':2,'Lengua':3,
+            'Música':1,'Inguru':3,'Religión':2,'Valores':2,'Mate':3,'Francés':1,
+            'Tutoretza':1,'Plastika':1},
+}
+
+@app.route('/admin/importar-datos-iniciales')
+@login_required
+def importar_datos_iniciales():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+
+    creados = {'cursos': 0, 'asignaturas': 0, 'asignaciones': 0}
+
+    for i, nombre in enumerate(['HH1','HH2','HH3']):
+        if not Curso.query.filter_by(nombre=nombre).first():
+            db.session.add(Curso(nombre=nombre, etapa='Haur Hezkuntza', orden=i+1))
+            creados['cursos'] += 1
+    for i, nombre in enumerate(['LH1','LH2','LH3','LH4','LH5','LH6']):
+        if not Curso.query.filter_by(nombre=nombre).first():
+            db.session.add(Curso(nombre=nombre, etapa='Lehen Hezkuntza', orden=10+i))
+            creados['cursos'] += 1
+    db.session.flush()
+
+    todas_asigs = set()
+    for asigs in _SEED_HORARIO.values():
+        todas_asigs.update(asigs.keys())
+    for nombre in todas_asigs:
+        if not Asignatura.query.filter_by(nombre=nombre).first():
+            db.session.add(Asignatura(nombre=nombre))
+            creados['asignaturas'] += 1
+    db.session.flush()
+
+    for curso_nombre, asigs in _SEED_HORARIO.items():
+        curso = Curso.query.filter_by(nombre=curso_nombre).first()
+        if not curso:
+            continue
+        for asig_nombre, horas in asigs.items():
+            asig = Asignatura.query.filter_by(nombre=asig_nombre).first()
+            if not asig:
+                continue
+            existing = CursoAsignatura.query.filter_by(
+                curso_id=curso.id, asignatura_id=asig.id).first()
+            if not existing:
+                db.session.add(CursoAsignatura(
+                    curso_id=curso.id, asignatura_id=asig.id, horas_semanales=horas))
+                creados['asignaciones'] += 1
+    db.session.commit()
+    flash(f'Importación completada: {creados["cursos"]} cursos, '
+          f'{creados["asignaturas"]} asignaturas, {creados["asignaciones"]} asignaciones.', 'success')
+    return redirect(url_for('horarios_construccion', tab='asignaturas'))
 
 
 # ───────────────────────────── INIT DB ─────────────────────────────
@@ -1321,7 +1396,9 @@ def generar_horario_automatico():
         curso = cursos_map.get(req.curso_id)
         if curso and curso.aula_cerrada:
             continue
-        for _ in range(req.horas_semanales):
+        import math
+        n_slots = math.ceil(req.horas_semanales) if req.horas_semanales else 0
+        for _ in range(n_slots):
             tasks.append((req.curso_id, req.asignatura_id))
 
     prof_por_asig = defaultdict(list)
@@ -1329,7 +1406,10 @@ def generar_horario_automatico():
         prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
 
     prof_etapas = {p.id: parse_etapas(p.etapa) for p in profesores_activos}
-    prof_tutoria = {p.aula_tutoria: p.id for p in profesores_activos if p.aula_tutoria}
+    prof_tutoria = defaultdict(list)
+    for p in profesores_activos:
+        if p.aula_tutoria:
+            prof_tutoria[p.aula_tutoria].append(p.id)
     curso_nombre = {c.id: c.nombre for c in cursos_map.values()}
 
     def etapa_compatible(prof_id, asig_id):
@@ -1420,9 +1500,10 @@ def generar_horario_automatico():
         # Tutor a primera hora (blanda, máxima prioridad si aplica)
         if regla_tutor_primera and franja == primera_franja:
             nombre_curso = curso_nombre.get(curso_id, '')
-            tutor_id = prof_tutoria.get(nombre_curso)
-            if tutor_id and tutor_id in cands:
-                cands = [tutor_id] + [p for p in cands if p != tutor_id]
+            tutor_ids = set(prof_tutoria.get(nombre_curso, []))
+            tutores_en_cands = [p for p in cands if p in tutor_ids]
+            if tutores_en_cands:
+                cands = tutores_en_cands + [p for p in cands if p not in tutor_ids]
 
         return cands
 
