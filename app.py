@@ -1829,12 +1829,17 @@ def generar_horario_automatico():
     # Paso 3: tareas normales — round-robin por curso para reparto equitativo
     slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
 
-    # Agrupar por curso y ordenar dentro de cada curso: más restringidas primero
+    # Agrupar por curso y ordenar dentro de cada curso:
+    # 1º tareas con regla fijar_curso_asignatura (más prioritarias),
+    # 2º las más restringidas en general (menos candidatos)
     tasks_by_course = defaultdict(list)
     for curso_id, asig_id in normal_tasks:
         tasks_by_course[curso_id].append((curso_id, asig_id))
     for cid in tasks_by_course:
-        tasks_by_course[cid].sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
+        tasks_by_course[cid].sort(key=lambda t: (
+            0 if rp_fijar_curso_asig.get((t[0], t[1])) else 1,
+            len(prof_por_asig.get(t[1], []))
+        ))
 
     # Entrelazar cursos en round-robin
     curso_queues = list(tasks_by_course.values())
@@ -1858,21 +1863,15 @@ def generar_horario_automatico():
         if not asignado:
             pending_retry.append((curso_id, asig_id))
 
-    # Segundo intento: tareas no asignadas con límite de horas relajado (+2)
+    # Segundo intento: mismas reglas, sin relajación — evita romper restricciones
     for curso_id, asig_id in pending_retry:
         slots_s = slots_all[:]
         random.shuffle(slots_s)
         asignado = False
         for dia, franja in slots_s:
-            slot = (dia, franja)
-            if slot in curso_ocupado[curso_id]:
-                continue
-            cands_relaxed = [pid for pid in prof_por_asig.get(asig_id, [])
-                             if etapa_compatible(pid, asig_id)
-                             and slot not in profesor_ocupado[pid]
-                             and profesor_horas[pid] < prof_max.get(pid, 25)]
-            if cands_relaxed:
-                do_assign(curso_id, asig_id, dia, franja, cands_relaxed[0])
+            cands = candidatos(curso_id, asig_id, dia, franja)
+            if cands:
+                do_assign(curso_id, asig_id, dia, franja, cands[0])
                 asignado = True
                 break
         if not asignado:
