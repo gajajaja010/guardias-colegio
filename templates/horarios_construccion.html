@@ -392,6 +392,26 @@
   </div>
 </div>
 
+{# ── Aviso asignaturas sin profesor ── #}
+{% if sin_profesor %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+  <div class="d-flex align-items-start gap-2">
+    <i class="bi bi-exclamation-triangle-fill fs-5 mt-1 flex-shrink-0"></i>
+    <div>
+      <strong>{{ sin_profesor|length }} asignatura{{ 's' if sin_profesor|length > 1 }} sin profesor asignado</strong>
+      — no se podrán generar esos slots:
+      <div class="mt-1 d-flex flex-wrap gap-1">
+        {% for item in sin_profesor %}
+        <span class="badge bg-warning text-dark">{{ item }}</span>
+        {% endfor %}
+      </div>
+      <div class="mt-2 small">Ve a <strong>Profesores</strong> y asigna las asignaturas correspondientes a cada profesor.</div>
+    </div>
+  </div>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
 {# ── Vista por profesor ── #}
 {% if vista == 'profesor' %}
 {% if not profesores %}

@@ -1869,6 +1869,21 @@ def horarios_construccion():
     reglas = ReglaHorario.query.all()
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
 
+    # Asignaturas sin ningún profesor asignado (para aviso en tab Horario)
+    profs_por_asig = defaultdict(set)
+    for pa in ProfesorAsignatura.query.all():
+        profs_por_asig[pa.asignatura_id].add(pa.profesor_id)
+    cursos_map_local = {c.id: c for c in cursos}
+    asig_map_local = {a.id: a for a in asignaturas}
+    sin_profesor = []
+    for req in CursoAsignatura.query.all():
+        if not profs_por_asig.get(req.asignatura_id):
+            curso_n = cursos_map_local.get(req.curso_id)
+            asig_n = asig_map_local.get(req.asignatura_id)
+            if curso_n and asig_n:
+                sin_profesor.append(f'{asig_n.nombre} ({curso_n.nombre})')
+    sin_profesor.sort()
+
     return render_template('horarios_construccion.html',
         tab=tab, vista=vista, asignaturas=asignaturas, asignaturas_por_etapa=asignaturas_por_etapa,
         cursos=cursos, profesores=profesores_lista,
@@ -1877,6 +1892,7 @@ def horarios_construccion():
         prof_asignaturas=prof_asignaturas,
         prof_horas_asig=prof_horas_asig, prof_especialidades=prof_especialidades,
         etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS, franjas_clase=franjas_clase,
+        sin_profesor=sin_profesor,
         reglas=reglas)
 
 
