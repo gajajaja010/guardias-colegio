@@ -151,6 +151,18 @@ class ProfesorGrupo(db.Model):
     profesor = db.relationship('Profesor', backref=db.backref('grupos', lazy=True))
 
 
+class SlotComplementaria(db.Model):
+    """Franjas de trabajo complementario/personal de cada profesor."""
+    id = db.Column(db.Integer, primary_key=True)
+    profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
+    dia = db.Column(db.String(20), nullable=False)
+    franja = db.Column(db.String(30), nullable=False)
+    tipo = db.Column(db.String(20), default='libre')  # 'libre' | 'grupo'
+    grupo_id = db.Column(db.Integer, db.ForeignKey('grupo_trabajo.id'), nullable=True)
+    profesor = db.relationship('Profesor', backref='slots_complementaria')
+    grupo_rel = db.relationship('GrupoTrabajo')
+
+
 class HorarioProfesor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
@@ -1846,12 +1858,15 @@ def horarios_construccion():
     horario_grid = {}
     prof_sel = None
     horario_prof_grid = {}
+    comp_grid = {}
     if tab == 'horario':
         if vista == 'profesor' and profesores_lista:
             prof_sel = Profesor.query.get(prof_id) if prof_id else profesores_lista[0]
             if prof_sel:
                 for a in HorarioAsignacion.query.filter_by(profesor_id=prof_sel.id).all():
                     horario_prof_grid[(a.dia, a.franja)] = a
+                for s in SlotComplementaria.query.filter_by(profesor_id=prof_sel.id).all():
+                    comp_grid[(s.dia, s.franja)] = s
         elif cursos:
             curso_sel = Curso.query.get(curso_id) if curso_id else cursos[0]
             if curso_sel:
@@ -1897,7 +1912,7 @@ def horarios_construccion():
         prof_asignaturas=prof_asignaturas,
         prof_horas_asig=prof_horas_asig, prof_especialidades=prof_especialidades,
         etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS, franjas_clase=franjas_clase,
-        sin_profesor=sin_profesor,
+        sin_profesor=sin_profesor, comp_grid=comp_grid,
         reglas=reglas)
 
 
@@ -2075,6 +2090,87 @@ def limpiar_horario_hc():
     db.session.commit()
     flash('Horario borrado.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario'))
+
+
+@app.route('/horarios-construccion/generar-complementarias', methods=['POST'])
+@login_required
+def generar_complementarias_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    import random, math
+    SlotComplementaria.query.delete()
+
+    franjas_clase = [f for f in FRANJAS if f != 'Patio']
+    slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
+
+    # Slots ya ocupados por clases para cada profesor
+    prof_ocupado = defaultdict(set)
+    for asig in HorarioAsignacion.query.all():
+        prof_ocupado[asig.profesor_id].add((asig.dia, asig.franja))
+        if asig.profesor2_id:
+            prof_ocupado[asig.profesor2_id].add((asig.dia, asig.franja))
+
+    prof_slots_comp = defaultdict(int)  # cuántos slots de comp ya tiene cada prof
+
+    # Paso 1: grupos de trabajo — todos los miembros deben coincidir
+    for grupo in GrupoTrabajo.query.order_by(GrupoTrabajo.id).all():
+        miembros = ProfesorGrupo.query.filter_by(grupo_id=grupo.id).all()
+        if not miembros:
+            continue
+        prof_ids = [m.profesor_id for m in miembros]
+        # Número de slots semanales del grupo = máximo de horas entre miembros (redondeado)
+        n_slots = math.ceil(max(m.horas_semanales for m in miembros))
+        slots_s = slots_all[:]
+        random.shuffle(slots_s)
+        colocados = 0
+        for dia, franja in slots_s:
+            if colocados >= n_slots:
+                break
+            slot = (dia, franja)
+            if all(slot not in prof_ocupado[pid] for pid in prof_ids):
+                for pid in prof_ids:
+                    db.session.add(SlotComplementaria(
+                        profesor_id=pid, dia=dia, franja=franja,
+                        tipo='grupo', grupo_id=grupo.id
+                    ))
+                    prof_ocupado[pid].add(slot)
+                    prof_slots_comp[pid] += 1
+                colocados += 1
+
+    # Paso 2: horas libres individuales restantes
+    for prof in Profesor.query.filter_by(activo=True, de_baja=False).all():
+        total_libres = math.ceil(prof.horas_libres or 0)
+        ya_asignados = prof_slots_comp[prof.id]
+        n_libre = max(0, total_libres - ya_asignados)
+        slots_s = slots_all[:]
+        random.shuffle(slots_s)
+        colocados = 0
+        for dia, franja in slots_s:
+            if colocados >= n_libre:
+                break
+            slot = (dia, franja)
+            if slot not in prof_ocupado[prof.id]:
+                db.session.add(SlotComplementaria(
+                    profesor_id=prof.id, dia=dia, franja=franja,
+                    tipo='libre'
+                ))
+                prof_ocupado[prof.id].add(slot)
+                colocados += 1
+
+    db.session.commit()
+    flash('Slots complementarios generados.', 'success')
+    return redirect(url_for('horarios_construccion', tab='horario', vista='profesor'))
+
+
+@app.route('/horarios-construccion/limpiar-complementarias', methods=['POST'])
+@login_required
+def limpiar_complementarias_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    SlotComplementaria.query.delete()
+    db.session.commit()
+    flash('Slots complementarios borrados.', 'success')
+    return redirect(url_for('horarios_construccion', tab='horario', vista='profesor'))
 
 
 # ───────────────────────────── REGLAS HORARIO ─────────────────────────────
@@ -2331,6 +2427,14 @@ def init_db():
         'ALTER TABLE horario_asignacion ADD COLUMN asignatura2_id INTEGER REFERENCES asignatura(id)',
         'ALTER TABLE horario_asignacion ADD COLUMN profesor2_id INTEGER REFERENCES profesor(id)',
         'ALTER TABLE curso_asignatura ALTER COLUMN horas_semanales TYPE REAL USING horas_semanales::REAL',
+        """CREATE TABLE IF NOT EXISTS slot_complementaria (
+            id SERIAL PRIMARY KEY,
+            profesor_id INTEGER NOT NULL REFERENCES profesor(id),
+            dia VARCHAR(20) NOT NULL,
+            franja VARCHAR(30) NOT NULL,
+            tipo VARCHAR(20) DEFAULT 'libre',
+            grupo_id INTEGER REFERENCES grupo_trabajo(id)
+        )""",
     ]
     for sql in migrations:
         try:
