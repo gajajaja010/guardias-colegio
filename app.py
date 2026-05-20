@@ -1908,7 +1908,7 @@ def guardar_requisito_hc():
         return redirect(url_for('dashboard'))
     curso_id = int(request.form.get('curso_id'))
     asignatura_id = int(request.form.get('asignatura_id'))
-    horas = int(request.form.get('horas', 1))
+    horas = float(request.form.get('horas', 1))
     accion = request.form.get('accion', 'guardar')
     if accion == 'eliminar':
         CursoAsignatura.query.filter_by(
@@ -1935,7 +1935,7 @@ def guardar_requisitos_asignatura_hc(asig_id):
     curso_ids_marcados = [int(x) for x in request.form.getlist('curso_ids')]
     CursoAsignatura.query.filter_by(asignatura_id=asig_id).delete()
     for curso_id in curso_ids_marcados:
-        horas = int(request.form.get(f'horas_{curso_id}', 1))
+        horas = float(request.form.get(f'horas_{curso_id}', 1))
         if horas > 0:
             db.session.add(CursoAsignatura(
                 curso_id=curso_id, asignatura_id=asig_id, horas_semanales=horas))
@@ -1974,7 +1974,7 @@ def guardar_especialidades_hc(prof_id):
         nombre = nombre.strip()
         if nombre:
             try:
-                h = max(0, int(horas))
+                h = max(0, float(horas))
             except ValueError:
                 h = 0
             db.session.add(ProfesorEspecialidad(

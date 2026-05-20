@@ -148,7 +148,7 @@
                       <input type="number" name="horas_{{ curso.id }}"
                              class="form-control form-control-sm"
                              value="{{ req.horas_semanales if req else 0 }}"
-                             min="0" max="20"
+                             min="0" max="20" step="0.5"
                              {% if not req %}disabled{% endif %}>
                     </td>
                   </tr>
@@ -274,7 +274,7 @@
               <input type="text" name="esp_nombre" class="form-control form-control-sm border-0 bg-transparent p-0"
                      style="width:110px;" placeholder="Especialidad" value="{{ esp.nombre }}">
               <input type="number" name="esp_horas" class="form-control form-control-sm border-0 bg-transparent p-0 text-center"
-                     style="width:48px;" min="0" max="40" value="{{ esp.horas_semanales }}"
+                     style="width:48px;" min="0" max="40" step="0.5" value="{{ esp.horas_semanales }}"
                      title="Horas/semana">
               <small class="text-muted">h</small>
               <button type="button" class="btn btn-link btn-sm p-0 text-danger ms-1"
