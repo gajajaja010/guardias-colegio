@@ -454,6 +454,11 @@ def enviar_email_guardia(guardia):
 
 # ───────────────────────────── RUTAS AUTH ─────────────────────────────
 
+@app.errorhandler(500)
+def error500(e):
+    import traceback
+    return f'<pre>{traceback.format_exc()}</pre>', 500
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
