@@ -11,7 +11,10 @@ import openpyxl
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'guardias-colegio-secret-2024')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///guardias.db')
+_db_url = os.environ.get('DATABASE_URL', 'sqlite:///guardias.db')
+if _db_url.startswith('postgres://'):
+    _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Email config (se configura en settings)
@@ -37,6 +40,18 @@ login_manager.login_message = 'Debes iniciar sesión para acceder.'
 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 
 DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+
+def parse_etapas(val):
+    """Convierte el campo etapa (JSON list o string legacy) a lista."""
+    if not val:
+        return []
+    val = str(val).strip()
+    if val.startswith('['):
+        try:
+            return json.loads(val)
+        except Exception:
+            return []
+    return [val] if val else []
 FRANJAS = ['9:00-10:00', '10:00-11:00', 'Patio', '11:30-12:30', '14:30-15:30', '15:30-16:30']
 
 # ───────────────────────────── MODELOS ─────────────────────────────
@@ -48,16 +63,18 @@ class Profesor(UserMixin, db.Model):
     nombre = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200))
-    etapa = db.Column(db.String(50))
+    etapa = db.Column(db.Text, default='[]')  # JSON list: ["Primaria", "3-4-5 años"]
     aula_tutoria = db.Column(db.String(50))
     aulas_bloqueadas = db.Column(db.Text, default='[]')  # JSON: ["2ºA", "3ºB"]
     es_admin = db.Column(db.Boolean, default=False)
     es_especialista = db.Column(db.Boolean, default=False)
+    es_pt = db.Column(db.Boolean, default=False)
     activo = db.Column(db.Boolean, default=True)
     de_baja = db.Column(db.Boolean, default=False)
     fecha_baja = db.Column(db.Date)
     fecha_vuelta = db.Column(db.Date)
     horas_max_semanales = db.Column(db.Integer, default=25)
+    horas_trabajo_personal = db.Column(db.Integer, default=0)
     creado = db.Column(db.DateTime, default=datetime.utcnow)
 
     horario = db.relationship('HorarioProfesor', backref='profesor', lazy=True, cascade='all, delete-orphan')
@@ -314,11 +331,11 @@ def buscar_profesor_para_guardia(dia, franja, excluir_id, aula=None, etapa_ausen
                 return False
         return True
 
-    candidatos = Profesor.query.filter_by(activo=True, de_baja=False, es_especialista=False).all()
+    candidatos = Profesor.query.filter_by(activo=True, de_baja=False, es_especialista=False, es_pt=False).all()
     candidatos = [p for p in candidatos if puede_cubrir(p)]
 
     if not candidatos:
-        candidatos = Profesor.query.filter_by(activo=True, de_baja=False, es_especialista=True).all()
+        candidatos = Profesor.query.filter_by(activo=True, de_baja=False, es_especialista=True, es_pt=False).all()
         candidatos = [p for p in candidatos if puede_cubrir(p)]
 
     if not candidatos:
@@ -475,11 +492,13 @@ def nuevo_profesor():
         p = Profesor(
             nombre=request.form.get('nombre', '').strip(),
             email=email,
-            etapa=request.form.get('etapa', '').strip() or None,
+            etapa=json.dumps(request.form.getlist('etapas')),
             aula_tutoria=request.form.get('aula_tutoria', '').strip() or None,
             aulas_bloqueadas=aulas_bloqueadas,
             es_admin=bool(request.form.get('es_admin')),
             es_especialista=bool(request.form.get('es_especialista')),
+            es_pt=bool(request.form.get('es_pt')),
+            horas_trabajo_personal=int(request.form.get('horas_trabajo_personal', 0) or 0),
         )
         db.session.add(p)
         db.session.commit()
@@ -564,12 +583,14 @@ def editar_profesor(id):
         return redirect(url_for('profesores'))
     if request.method == 'POST':
         p.nombre = request.form.get('nombre', '').strip()
-        p.etapa = request.form.get('etapa', '').strip() or None
+        p.etapa = json.dumps(request.form.getlist('etapas'))
         p.aula_tutoria = request.form.get('aula_tutoria', '').strip() or None
         p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
+        p.horas_trabajo_personal = int(request.form.get('horas_trabajo_personal', 0) or 0)
         if current_user.es_admin:
             p.es_admin = bool(request.form.get('es_admin'))
             p.es_especialista = bool(request.form.get('es_especialista'))
+            p.es_pt = bool(request.form.get('es_pt'))
         nueva_pass = request.form.get('password', '').strip()
         if nueva_pass:
             p.password_hash = hash_password(nueva_pass)
@@ -1304,7 +1325,7 @@ def generar_horario_automatico():
     for pa in ProfesorAsignatura.query.all():
         prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
 
-    prof_etapa = {p.id: p.etapa for p in profesores_activos}
+    prof_etapas = {p.id: parse_etapas(p.etapa) for p in profesores_activos}
     prof_tutoria = {p.aula_tutoria: p.id for p in profesores_activos if p.aula_tutoria}
     curso_nombre = {c.id: c.nombre for c in cursos_map.values()}
 
@@ -1312,7 +1333,10 @@ def generar_horario_automatico():
         asig = asig_map.get(asig_id)
         if not asig or not asig.etapa:
             return True
-        return prof_etapa.get(prof_id) == asig.etapa
+        etapas_prof = prof_etapas.get(prof_id, [])
+        if not etapas_prof:
+            return True
+        return asig.etapa in etapas_prof
 
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
     primera_franja = franjas_clase[0] if franjas_clase else None
@@ -1940,6 +1964,11 @@ def init_db():
         'ALTER TABLE curso ADD COLUMN aula_cerrada BOOLEAN DEFAULT 0',
         'ALTER TABLE asignatura ADD COLUMN etapa VARCHAR(50)',
         'ALTER TABLE configuracion_email ADD COLUMN anthropic_api_key VARCHAR(200)',
+        'ALTER TABLE profesor ADD COLUMN es_pt BOOLEAN DEFAULT FALSE',
+        'ALTER TABLE profesor ADD COLUMN horas_trabajo_personal INTEGER DEFAULT 0',
+        'ALTER TABLE regla_horario ADD COLUMN dureza VARCHAR(10) DEFAULT \'dura\'',
+        'ALTER TABLE regla_horario ADD COLUMN profesor_id INTEGER REFERENCES profesor(id)',
+        'ALTER TABLE regla_horario ADD COLUMN curso_id_regla INTEGER REFERENCES curso(id)',
     ]
     for sql in migrations:
         try:

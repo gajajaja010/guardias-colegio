@@ -7,7 +7,7 @@
   </a>
 </div>
 <div class="row justify-content-center">
-  <div class="col-md-6">
+  <div class="col-md-7">
     <div class="card">
       <div class="card-header bg-white">
         <h5 class="mb-0">{{ 'Editar profesor' if profesor else 'Añadir nuevo profesor' }}</h5>
@@ -33,16 +33,24 @@
               placeholder="nombre@laasunciondonostia.com"
               {{ 'readonly' if profesor else 'required' }}>
           </div>
+
           <div class="row">
             <div class="col-md-6 mb-3">
-              <label class="form-label">Etapa educativa</label>
-              <select name="etapa" class="form-select">
-                <option value="">Sin especificar</option>
-                {% set etapas = ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
-                {% for e in etapas %}
-                <option value="{{ e }}" {{ 'selected' if profesor and profesor.etapa == e }}>{{ e }}</option>
+              <label class="form-label">Etapas educativas</label>
+              {% set etapas_lista = ['1-2 años', '3-4-5 años', 'Primaria', 'Otras'] %}
+              {% set etapas_prof = profesor.etapa | from_json if profesor else [] %}
+              <div class="border rounded p-2">
+                {% for e in etapas_lista %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox"
+                    name="etapas" value="{{ e }}"
+                    id="etapa_{{ loop.index }}"
+                    {{ 'checked' if e in etapas_prof }}>
+                  <label class="form-check-label" for="etapa_{{ loop.index }}">{{ e }}</label>
+                </div>
                 {% endfor %}
-              </select>
+              </div>
+              <div class="form-text">Puede marcar varias etapas a la vez.</div>
             </div>
             <div class="col-md-6 mb-3">
               <label class="form-label">Aula de tutoría</label>
@@ -56,9 +64,17 @@
                 {% endfor %}
               </select>
               {% if not cursos %}
-              <div class="form-text text-muted">No hay cursos definidos. Añádelos en <a href="{{ url_for('tutorias') }}">Tutorías</a>.</div>
+              <div class="form-text text-muted">No hay cursos. Añádelos en <a href="{{ url_for('tutorias') }}">Tutorías</a>.</div>
               {% endif %}
             </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Horas de trabajo personal semanales</label>
+            <input type="number" name="horas_trabajo_personal" class="form-control"
+              min="0" max="40" value="{{ profesor.horas_trabajo_personal if profesor else 0 }}"
+              style="width:120px">
+            <div class="form-text">Horas reservadas para preparación, atención a familias, etc. Se tienen en cuenta al calcular disponibilidad para guardias.</div>
           </div>
 
           <div class="mb-3">
@@ -91,17 +107,30 @@
 
           {% if current_user.es_admin %}
           <div class="mb-3">
-            <div class="form-check form-switch mb-2">
-              <input class="form-check-input" type="checkbox" name="es_especialista" id="especialista"
-                {{ 'checked' if profesor and profesor.es_especialista }}>
-              <label class="form-check-label" for="especialista">
-                Especialista — entra en el sistema solo si no hay nadie del pool normal disponible
-              </label>
-            </div>
-            <div class="form-check form-switch">
-              <input class="form-check-input" type="checkbox" name="es_admin" id="esAdmin"
-                {{ 'checked' if profesor and profesor.es_admin }}>
-              <label class="form-check-label" for="esAdmin">Administrador</label>
+            <label class="form-label fw-semibold">Rol y permisos</label>
+            <div class="border rounded p-3 d-flex flex-column gap-2">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="es_pt" id="esPT"
+                  {{ 'checked' if profesor and profesor.es_pt }}>
+                <label class="form-check-label" for="esPT">
+                  <strong>PT</strong> — Pedagogía Terapéutica
+                  <small class="text-muted d-block">No entra en el pool automático de guardias. Sus guardias se gestionan manualmente.</small>
+                </label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="es_especialista" id="especialista"
+                  {{ 'checked' if profesor and profesor.es_especialista }}>
+                <label class="form-check-label" for="especialista">
+                  <strong>Especialista</strong> — entra solo si no hay nadie del pool normal disponible
+                </label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="es_admin" id="esAdmin"
+                  {{ 'checked' if profesor and profesor.es_admin }}>
+                <label class="form-check-label" for="esAdmin">
+                  <strong>Administrador</strong>
+                </label>
+              </div>
             </div>
           </div>
           {% endif %}

@@ -685,7 +685,7 @@
         <span class="badge bg-secondary">{{ reglas|length }}</span>
       </div>
       <div class="card-body p-0">
-        {% set reglas_asig = reglas|selectattr('profesor_regla', 'none')|list %}
+        {% set reglas_asig = reglas|rejectattr('profesor_regla')|list %}
         {% set reglas_prof = reglas|selectattr('profesor_regla')|list %}
         {% if reglas %}
 
