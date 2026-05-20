@@ -252,10 +252,15 @@ class HorarioAsignacion(db.Model):
     profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
     dia = db.Column(db.String(20), nullable=False)
     franja = db.Column(db.String(30), nullable=False)
+    # Para franjas compartidas (dos medias horas en el mismo slot)
+    asignatura2_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=True)
+    profesor2_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=True)
     __table_args__ = (db.UniqueConstraint('curso_id', 'dia', 'franja'),)
     curso = db.relationship('Curso')
-    asignatura = db.relationship('Asignatura')
-    profesor = db.relationship('Profesor')
+    asignatura = db.relationship('Asignatura', foreign_keys=[asignatura_id])
+    profesor = db.relationship('Profesor', foreign_keys=[profesor_id])
+    asignatura2 = db.relationship('Asignatura', foreign_keys=[asignatura2_id])
+    profesor2 = db.relationship('Profesor', foreign_keys=[profesor2_id])
 
 
 class ReglaHorario(db.Model):
@@ -1518,15 +1523,30 @@ def generar_horario_automatico():
             elif r.tipo == 'prof_max_horas':
                 rp_max_horas[pid] = r.valor
 
+    import math
     tasks = []
+    half_tasks_per_curso = defaultdict(list)  # curso_id -> [asig_id, ...]
+
     for req in CursoAsignatura.query.all():
         curso = cursos_map.get(req.curso_id)
         if curso and curso.aula_cerrada:
             continue
-        import math
-        n_slots = math.ceil(req.horas_semanales) if req.horas_semanales else 0
-        for _ in range(n_slots):
+        horas = req.horas_semanales or 0
+        n_full = int(horas)
+        has_half = round(horas % 1, 1) >= 0.4  # >= 0.5 con tolerancia float
+        for _ in range(n_full):
             tasks.append((req.curso_id, req.asignatura_id))
+        if has_half:
+            half_tasks_per_curso[req.curso_id].append(req.asignatura_id)
+
+    # Emparejar medias horas dentro del mismo curso
+    paired_tasks = []  # [(curso_id, asig_id1, asig_id2)]
+    for curso_id, halves in half_tasks_per_curso.items():
+        while len(halves) >= 2:
+            paired_tasks.append((curso_id, halves.pop(0), halves.pop(0)))
+        if halves:
+            # Media hora sin pareja → añadir como slot completo
+            tasks.append((curso_id, halves[0]))
 
     prof_por_asig = defaultdict(list)
     for pa in ProfesorAsignatura.query.all():
@@ -1573,6 +1593,24 @@ def generar_horario_automatico():
         curso_ocupado[curso_id].add(slot)
         profesor_horas[prof_id] += 1
         asig_dia_count[(curso_id, asig_id, dia)] += 1
+
+    def do_assign_paired(curso_id, asig_id1, asig_id2, prof_id1, prof_id2, dia, franja):
+        slot = (dia, franja)
+        db.session.add(HorarioAsignacion(
+            curso_id=curso_id,
+            asignatura_id=asig_id1, profesor_id=prof_id1,
+            asignatura2_id=asig_id2, profesor2_id=prof_id2,
+            dia=dia, franja=franja
+        ))
+        profesor_ocupado[prof_id1].add(slot)
+        if prof_id2 != prof_id1:
+            profesor_ocupado[prof_id2].add(slot)
+        curso_ocupado[curso_id].add(slot)
+        profesor_horas[prof_id1] += 1
+        if prof_id2 != prof_id1:
+            profesor_horas[prof_id2] += 1
+        asig_dia_count[(curso_id, asig_id1, dia)] += 1
+        asig_dia_count[(curso_id, asig_id2, dia)] += 1
 
     def candidatos(curso_id, asig_id, dia, franja):
         slot = (dia, franja)
@@ -1725,6 +1763,29 @@ def generar_horario_automatico():
                 break
         if not asignado:
             sin_asignar.append((curso_id, asig_id))
+
+    # Paso 4: medias horas emparejadas
+    for curso_id, asig_id1, asig_id2 in paired_tasks:
+        slots_s = slots_all[:]
+        random.shuffle(slots_s)
+        asignado = False
+        for dia, franja in slots_s:
+            c1 = candidatos(curso_id, asig_id1, dia, franja)
+            c2 = candidatos(curso_id, asig_id2, dia, franja)
+            if c1 and c2:
+                # Preferir el mismo profesor si puede con ambas
+                prof1 = c1[0]
+                # Si el primero de c1 también puede con asig2, usarlo para ambas
+                if prof1 in c2:
+                    prof2 = prof1
+                else:
+                    prof2 = c2[0]
+                do_assign_paired(curso_id, asig_id1, asig_id2, prof1, prof2, dia, franja)
+                asignado = True
+                break
+        if not asignado:
+            sin_asignar.append((curso_id, asig_id1))
+            sin_asignar.append((curso_id, asig_id2))
 
     db.session.commit()
     return sin_asignar
@@ -2224,6 +2285,8 @@ def init_db():
         'ALTER TABLE profesor ADD COLUMN horas_pt REAL DEFAULT 0',
         'ALTER TABLE profesor ADD COLUMN horas_educador REAL DEFAULT 0',
         'ALTER TABLE regla_horario ADD COLUMN etapa VARCHAR(50)',
+        'ALTER TABLE horario_asignacion ADD COLUMN asignatura2_id INTEGER REFERENCES asignatura(id)',
+        'ALTER TABLE horario_asignacion ADD COLUMN profesor2_id INTEGER REFERENCES profesor(id)',
     ]
     for sql in migrations:
         try:

@@ -489,9 +489,15 @@
                 {% if asig %}
                   <div class="d-flex flex-column align-items-center gap-1">
                     <span class="badge rounded-pill px-2 py-1 w-100 text-truncate" style="background:{{ asig.asignatura.color }}; font-size:.8rem; max-width:120px;">
-                      {{ asig.asignatura.nombre }}
+                      {{ asig.asignatura.nombre }}{% if asig.asignatura2 %} ½{% endif %}
                     </span>
                     <small class="text-muted" style="font-size:.72rem;">{{ asig.profesor.nombre.split()[0] }} {{ asig.profesor.nombre.split()[-1] }}</small>
+                    {% if asig.asignatura2 %}
+                    <span class="badge rounded-pill px-2 py-1 w-100 text-truncate" style="background:{{ asig.asignatura2.color }}; font-size:.8rem; max-width:120px;">
+                      {{ asig.asignatura2.nombre }} ½
+                    </span>
+                    <small class="text-muted" style="font-size:.72rem;">{{ asig.profesor2.nombre.split()[0] }} {{ asig.profesor2.nombre.split()[-1] }}</small>
+                    {% endif %}
                     <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2"
                             style="font-size:.72rem;"
                             data-bs-toggle="modal" data-bs-target="#modalFranja"
