@@ -1842,14 +1842,14 @@ def generar_horario_automatico():
         for dia, franja in slots_s:
             c1 = candidatos(curso_id, asig_id1, dia, franja)
             c2 = candidatos(curso_id, asig_id2, dia, franja)
+            # Si una asignatura no tiene profesor propio, usar el de la otra
+            if c1 and not c2:
+                c2 = c1
+            elif c2 and not c1:
+                c1 = c2
             if c1 and c2:
-                # Preferir el mismo profesor si puede con ambas
                 prof1 = c1[0]
-                # Si el primero de c1 también puede con asig2, usarlo para ambas
-                if prof1 in c2:
-                    prof2 = prof1
-                else:
-                    prof2 = c2[0]
+                prof2 = prof1 if prof1 in c2 else c2[0]
                 do_assign_paired(curso_id, asig_id1, asig_id2, prof1, prof2, dia, franja)
                 asignado = True
                 break
