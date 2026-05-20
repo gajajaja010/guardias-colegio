@@ -166,13 +166,41 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Rol y permisos</label>
             <div class="border rounded p-3 d-flex flex-column gap-2">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="es_pt" id="esPT"
-                  {{ 'checked' if profesor and profesor.es_pt }}>
-                <label class="form-check-label" for="esPT">
-                  <strong>PT</strong> — Pedagogía Terapéutica
-                  <small class="text-muted d-block">No entra en el pool automático de guardias. Sus guardias se gestionan manualmente.</small>
-                </label>
+              <div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="es_pt" id="esPT"
+                    {{ 'checked' if profesor and profesor.es_pt }}
+                    onchange="document.getElementById('horasPTRow').style.display=this.checked?'flex':'none'">
+                  <label class="form-check-label" for="esPT">
+                    <strong>PT</strong> — Pedagogía Terapéutica
+                    <small class="text-muted d-block">No entra en el pool automático de guardias.</small>
+                  </label>
+                </div>
+                <div id="horasPTRow" class="d-flex align-items-center gap-2 mt-1 ms-4"
+                  style="display:{{ 'flex' if profesor and profesor.es_pt else 'none' }}!important">
+                  <label class="text-muted small mb-0">Horas PT/semana:</label>
+                  <input type="number" name="horas_pt" class="form-control form-control-sm"
+                    style="width:90px" min="0" max="40" step="0.5"
+                    value="{{ profesor.horas_pt if profesor else 0 }}">
+                </div>
+              </div>
+              <div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="es_educador" id="esEducador"
+                    {{ 'checked' if profesor and profesor.es_educador }}
+                    onchange="document.getElementById('horasEducadorRow').style.display=this.checked?'flex':'none'">
+                  <label class="form-check-label" for="esEducador">
+                    <strong>Educador/a</strong>
+                    <small class="text-muted d-block">Funciones de educador además de docente.</small>
+                  </label>
+                </div>
+                <div id="horasEducadorRow" class="d-flex align-items-center gap-2 mt-1 ms-4"
+                  style="display:{{ 'flex' if profesor and profesor.es_educador else 'none' }}!important">
+                  <label class="text-muted small mb-0">Horas educador/semana:</label>
+                  <input type="number" name="horas_educador" class="form-control form-control-sm"
+                    style="width:90px" min="0" max="40" step="0.5"
+                    value="{{ profesor.horas_educador if profesor else 0 }}">
+                </div>
               </div>
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" name="es_especialista" id="especialista"

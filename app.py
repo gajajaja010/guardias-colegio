@@ -69,6 +69,7 @@ class Profesor(UserMixin, db.Model):
     es_admin = db.Column(db.Boolean, default=False)
     es_especialista = db.Column(db.Boolean, default=False)
     es_pt = db.Column(db.Boolean, default=False)
+    es_educador = db.Column(db.Boolean, default=False)
     activo = db.Column(db.Boolean, default=True)
     de_baja = db.Column(db.Boolean, default=False)
     fecha_baja = db.Column(db.Date)
@@ -77,6 +78,8 @@ class Profesor(UserMixin, db.Model):
     horas_trabajo_personal = db.Column(db.Integer, default=0)
     horas_libres = db.Column(db.Integer, default=0)
     horas_lectivas = db.Column(db.Integer, default=0)
+    horas_pt = db.Column(db.Float, default=0)
+    horas_educador = db.Column(db.Float, default=0)
     materias_especiales = db.Column(db.Text, default='[]')  # JSON: ["Inglés", "Música", ...]
     creado = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -530,9 +533,12 @@ def nuevo_profesor():
             es_admin=bool(request.form.get('es_admin')),
             es_especialista=bool(request.form.get('es_especialista')),
             es_pt=bool(request.form.get('es_pt')),
+            es_educador=bool(request.form.get('es_educador')),
             horas_trabajo_personal=int(request.form.get('horas_trabajo_personal', 0) or 0),
             horas_libres=int(request.form.get('horas_libres', 0) or 0),
             horas_lectivas=int(request.form.get('horas_lectivas', 0) or 0),
+            horas_pt=float(request.form.get('horas_pt', 0) or 0),
+            horas_educador=float(request.form.get('horas_educador', 0) or 0),
             materias_especiales=json.dumps(request.form.getlist('materias_especiales')),
         )
         db.session.add(p)
@@ -626,11 +632,14 @@ def editar_profesor(id):
         p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
         p.horas_libres = int(request.form.get('horas_libres', 0) or 0)
         p.horas_lectivas = int(request.form.get('horas_lectivas', 0) or 0)
+        p.horas_pt = float(request.form.get('horas_pt', 0) or 0)
+        p.horas_educador = float(request.form.get('horas_educador', 0) or 0)
         p.materias_especiales = json.dumps(request.form.getlist('materias_especiales'))
         if current_user.es_admin:
             p.es_admin = bool(request.form.get('es_admin'))
             p.es_especialista = bool(request.form.get('es_especialista'))
             p.es_pt = bool(request.form.get('es_pt'))
+            p.es_educador = bool(request.form.get('es_educador'))
         nueva_pass = request.form.get('password', '').strip()
         if nueva_pass:
             p.password_hash = hash_password(nueva_pass)
@@ -2136,6 +2145,9 @@ def init_db():
         'ALTER TABLE regla_horario ADD COLUMN curso_id_regla INTEGER REFERENCES curso(id)',
         'ALTER TABLE profesor ADD COLUMN horas_libres INTEGER DEFAULT 0',
         'ALTER TABLE profesor ADD COLUMN horas_lectivas INTEGER DEFAULT 0',
+        'ALTER TABLE profesor ADD COLUMN es_educador BOOLEAN DEFAULT FALSE',
+        'ALTER TABLE profesor ADD COLUMN horas_pt REAL DEFAULT 0',
+        'ALTER TABLE profesor ADD COLUMN horas_educador REAL DEFAULT 0',
     ]
     for sql in migrations:
         try:
