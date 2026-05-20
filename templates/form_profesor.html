@@ -69,14 +69,6 @@
             </div>
           </div>
 
-          <div class="mb-3">
-            <label class="form-label">Horas de trabajo personal semanales</label>
-            <input type="number" name="horas_trabajo_personal" class="form-control"
-              min="0" max="40" value="{{ profesor.horas_trabajo_personal if profesor else 0 }}"
-              style="width:120px">
-            <div class="form-text">Horas reservadas para preparación, atención a familias, etc. Se tienen en cuenta al calcular disponibilidad para guardias.</div>
-          </div>
-
           <div class="row">
             <div class="col-md-4 mb-3">
               <label class="form-label">Horas lectivas semanales</label>
@@ -90,17 +82,40 @@
               <input type="number" name="horas_libres" class="form-control"
                 min="0" max="40" value="{{ profesor.horas_libres if profesor else 0 }}"
                 style="width:120px">
-              <div class="form-text">Horas disponibles para hacer guardias.</div>
+              <div class="form-text">Horas disponibles para guardias.</div>
             </div>
-            {% if profesor %}
             <div class="col-md-4 mb-3">
               <label class="form-label">Horas complementarias</label>
-              <input type="number" class="form-control" value="{{ profesor.horas_complementarias | int }}"
+              <input type="number" class="form-control"
+                value="{{ profesor.horas_complementarias | int if profesor else 0 }}"
                 style="width:120px" disabled>
               <div class="form-text">Calculado desde grupos de trabajo.</div>
             </div>
-            {% endif %}
           </div>
+
+          {% if grupos %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Grupos de trabajo</label>
+            <div class="border rounded p-2">
+              {% for g in grupos %}
+              {% set horas_actuales = grupos_prof.get(g.id, 0) if grupos_prof else 0 %}
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <input class="form-check-input mt-0" type="checkbox"
+                  name="grupo_{{ g.id }}" id="grupo_{{ g.id }}" value="1"
+                  {% if horas_actuales %}checked{% endif %}
+                  onchange="this.nextElementSibling.disabled=!this.checked">
+                <label class="form-check-label flex-grow-1" for="grupo_{{ g.id }}">{{ g.nombre }}</label>
+                <input type="number" name="grupo_horas_{{ g.id }}"
+                  class="form-control form-control-sm" style="width:90px"
+                  value="{{ horas_actuales if horas_actuales else 1 }}"
+                  min="0.5" max="20" step="0.5"
+                  {% if not horas_actuales %}disabled{% endif %}>
+                <span class="text-muted small">h/sem</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
 
           <div class="mb-3">
             <label class="form-label">Especialidades que puede impartir</label>

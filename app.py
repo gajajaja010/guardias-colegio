@@ -490,6 +490,14 @@ def dashboard():
 
 # ───────────────────────────── PROFESORES ─────────────────────────────
 
+def _guardar_grupos_profesor(profesor_id, form):
+    ProfesorGrupo.query.filter_by(profesor_id=profesor_id).delete()
+    for g in GrupoTrabajo.query.all():
+        if form.get(f'grupo_{g.id}'):
+            horas = float(form.get(f'grupo_horas_{g.id}') or 1)
+            db.session.add(ProfesorGrupo(profesor_id=profesor_id, grupo_id=g.id, horas_semanales=horas))
+
+
 @app.route('/profesores')
 @login_required
 def profesores():
@@ -528,6 +536,8 @@ def nuevo_profesor():
             materias_especiales=json.dumps(request.form.getlist('materias_especiales')),
         )
         db.session.add(p)
+        db.session.flush()
+        _guardar_grupos_profesor(p.id, request.form)
         db.session.commit()
         if mail_configurado():
             ok = enviar_invitacion(p)
@@ -539,7 +549,8 @@ def nuevo_profesor():
             flash(f'Profesor {p.nombre} añadido. Configura el email para enviarle la invitación, o usa "Reenviar invitación" más adelante.', 'warning')
         return redirect(url_for('profesores'))
     cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
-    return render_template('form_profesor.html', profesor=None, cursos=cursos)
+    grupos = GrupoTrabajo.query.order_by(GrupoTrabajo.nombre).all()
+    return render_template('form_profesor.html', profesor=None, cursos=cursos, grupos=grupos, grupos_prof={})
 
 
 @app.route('/profesores/<int:id>/enlace-invitacion')
@@ -613,7 +624,6 @@ def editar_profesor(id):
         p.etapa = json.dumps(request.form.getlist('etapas'))
         p.aula_tutoria = request.form.get('aula_tutoria', '').strip() or None
         p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
-        p.horas_trabajo_personal = int(request.form.get('horas_trabajo_personal', 0) or 0)
         p.horas_libres = int(request.form.get('horas_libres', 0) or 0)
         p.horas_lectivas = int(request.form.get('horas_lectivas', 0) or 0)
         p.materias_especiales = json.dumps(request.form.getlist('materias_especiales'))
@@ -624,11 +634,14 @@ def editar_profesor(id):
         nueva_pass = request.form.get('password', '').strip()
         if nueva_pass:
             p.password_hash = hash_password(nueva_pass)
+        _guardar_grupos_profesor(p.id, request.form)
         db.session.commit()
         flash('Perfil actualizado.', 'success')
         return redirect(url_for('profesores'))
     cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
-    return render_template('form_profesor.html', profesor=p, cursos=cursos)
+    grupos = GrupoTrabajo.query.order_by(GrupoTrabajo.nombre).all()
+    grupos_prof = {m.grupo_id: m.horas_semanales for m in p.grupos}
+    return render_template('form_profesor.html', profesor=p, cursos=cursos, grupos=grupos, grupos_prof=grupos_prof)
 
 
 @app.route('/profesores/<int:id>/baja', methods=['POST'])
