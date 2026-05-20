@@ -1005,6 +1005,8 @@ function updateReglaFields() {
   }
 }
 
+document.addEventListener('DOMContentLoaded', updateReglaFields);
+
 function toggleHoras(checkbox) {
   var row = checkbox.closest('tr');
   var input = row.querySelector('input[type="number"]');
