@@ -1699,6 +1699,13 @@ def horarios_construccion():
     curso_id = request.args.get('curso_id', type=int)
 
     asignaturas = Asignatura.query.order_by(Asignatura.nombre).all()
+    # Pre-agrupar por etapa en Python para evitar problemas con None en Jinja2 groupby
+    _etapa_order = {'Haur Hezkuntza': 0, 'Lehen Hezkuntza': 1, '1-2 años': 2, 'Otras': 3}
+    _grupos = {}
+    for a in asignaturas:
+        key = a.etapa or ''
+        _grupos.setdefault(key, []).append(a)
+    asignaturas_por_etapa = sorted(_grupos.items(), key=lambda x: _etapa_order.get(x[0], 99))
     cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
     profesores_lista = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
 
@@ -1727,7 +1734,7 @@ def horarios_construccion():
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
 
     return render_template('horarios_construccion.html',
-        tab=tab, asignaturas=asignaturas, cursos=cursos,
+        tab=tab, asignaturas=asignaturas, asignaturas_por_etapa=asignaturas_por_etapa, cursos=cursos,
         profesores=profesores_lista, curso_sel=curso_sel,
         horario_grid=horario_grid, prof_asignaturas=prof_asignaturas,
         prof_horas_asig=prof_horas_asig, prof_especialidades=prof_especialidades,
