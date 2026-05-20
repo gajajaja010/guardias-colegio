@@ -76,8 +76,17 @@
   {# — Lista de asignaturas como acordeón — #}
   <div class="col-md-8">
     {% if asignaturas %}
-    <div class="accordion" id="acordeonAsignaturas">
-      {% for asig in asignaturas %}
+    {% set etapa_labels = {'Haur Hezkuntza': 'info', 'Lehen Hezkuntza': 'success', '1-2 años': 'warning', '': 'secondary'} %}
+    {% for etapa_grupo, grupo_asigs in asignaturas | groupby('etapa') %}
+    <div class="mb-1">
+      <div class="d-flex align-items-center gap-2 mb-2 mt-3">
+        <span class="badge bg-{{ etapa_labels.get(etapa_grupo, 'secondary') }} px-3 py-1" style="font-size:.85rem;">
+          {{ etapa_grupo if etapa_grupo else 'Todas las etapas' }}
+        </span>
+        <hr class="flex-grow-1 my-0">
+      </div>
+    <div class="accordion" id="acordeonAsignaturas_{{ loop.index }}">
+      {% for asig in grupo_asigs %}
       <div class="accordion-item border rounded mb-2">
         <h2 class="accordion-header">
           <button class="accordion-button collapsed py-2 gap-2" type="button"
@@ -159,6 +168,8 @@
       </div>
       {% endfor %}
     </div>
+    </div>
+    {% endfor %}
     {% else %}
       <div class="card">
         <div class="card-body text-center text-muted py-5">
