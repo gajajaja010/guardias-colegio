@@ -1544,9 +1544,6 @@ def generar_horario_automatico():
     for curso_id, halves in half_tasks_per_curso.items():
         while len(halves) >= 2:
             paired_tasks.append((curso_id, halves.pop(0), halves.pop(0)))
-        if halves:
-            # Media hora sin pareja → añadir como slot completo
-            tasks.append((curso_id, halves[0]))
 
     prof_por_asig = defaultdict(list)
     for pa in ProfesorAsignatura.query.all():
