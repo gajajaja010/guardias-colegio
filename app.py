@@ -1510,7 +1510,7 @@ def generar_horario_automatico():
     reglas_consecutivas = {}
     reglas_fijar = {}
     regla_tutor_primera = False
-    regla_unico_prof = False
+    regla_unico_prof = None  # None | 'dura' | 'blanda'
 
     # Reglas generales por clase (etapa): tutor imparte asignatura en su clase
     # etapa -> asig_id -> dureza ('dura'|'blanda')
@@ -1539,7 +1539,7 @@ def generar_horario_automatico():
         elif r.tipo == 'tutor_primera':
             regla_tutor_primera = True
         elif r.tipo == 'asig_unico_prof':
-            regla_unico_prof = True
+            regla_unico_prof = r.dureza  # 'dura' | 'blanda'
         elif r.tipo == 'tutor_clase_etapa' and r.etapa and r.asignatura_id:
             if r.dureza == 'dura':
                 reglas_tutor_etapa_dura[r.etapa].add(r.asignatura_id)
@@ -1690,11 +1690,17 @@ def generar_horario_automatico():
             if restricted:
                 cands = restricted
 
-        # Regla asig_unico_prof: si ya hay un prof asignado para esta asig en este curso, solo él
+        # Regla asig_unico_prof
         if regla_unico_prof:
             prof_ya = asig_prof_asignado.get((curso_id, asig_id))
             if prof_ya is not None:
-                cands = [prof_ya] if prof_ya in cands else []
+                if regla_unico_prof == 'dura':
+                    # Solo puede dar el mismo profesor
+                    cands = [prof_ya] if prof_ya in cands else []
+                else:
+                    # Blanda: preferir al mismo profesor, pero si no puede, usar otro
+                    if prof_ya in cands:
+                        cands = [prof_ya] + [p for p in cands if p != prof_ya]
 
         # Regla tutor_clase_etapa: en esta etapa el tutor imparte esta asig
         etapa_curso = curso_etapa.get(curso_id)
@@ -2192,15 +2198,17 @@ def _asignar_grupos_trabajo():
                     prof_slots_grupo[pid] += 1
                 colocados += 1
 
-        # Horas extra de cada miembro individualmente
+        # Horas extra o fallback individual si no se encontró slot común
         for m in miembros:
-            extras = math.ceil(m.horas_semanales) - min_horas
-            if extras <= 0:
+            necesita = math.ceil(m.horas_semanales)
+            ya_tiene = prof_slots_grupo[m.profesor_id]
+            pendiente = necesita - ya_tiene
+            if pendiente <= 0:
                 continue
             random.shuffle(slots_s)
             colocados_extra = 0
             for dia, franja in slots_s:
-                if colocados_extra >= extras:
+                if colocados_extra >= pendiente:
                     break
                 slot = (dia, franja)
                 if slot not in prof_ocupado[m.profesor_id]:
