@@ -1912,6 +1912,10 @@ def horarios_construccion():
         p.id: HorarioAsignacion.query.filter_by(profesor_id=p.id).count()
         for p in profesores_lista
     }
+    prof_etapas_list = {
+        p.id: parse_etapas(p.etapa)
+        for p in profesores_lista
+    }
     prof_especialidades = {
         p.id: ProfesorEspecialidad.query.filter_by(profesor_id=p.id).order_by(ProfesorEspecialidad.nombre).all()
         for p in profesores_lista
@@ -1942,6 +1946,7 @@ def horarios_construccion():
         prof_sel=prof_sel, horario_prof_grid=horario_prof_grid,
         prof_asignaturas=prof_asignaturas,
         prof_horas_asig=prof_horas_asig, prof_especialidades=prof_especialidades,
+        prof_etapas_list=prof_etapas_list,
         etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS, franjas_clase=franjas_clase,
         sin_profesor=sin_profesor, comp_grid=comp_grid,
         reglas=reglas)

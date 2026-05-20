@@ -226,8 +226,8 @@
               {% if asignaturas %}
               <div class="d-flex flex-wrap gap-2">
                 {% for asig in asignaturas %}
-                {# only show asignaturas compatible with this teacher's etapa #}
-                {% if not asig.etapa or not prof.etapa or asig.etapa == prof.etapa %}
+                {% set etapas_prof = prof_etapas_list[prof.id] %}
+                {% if not asig.etapa or not etapas_prof or asig.etapa in etapas_prof %}
                 <div class="form-check form-check-inline m-0">
                   <input class="form-check-input" type="checkbox" name="asignaturas"
                          id="pa_{{ prof.id }}_{{ asig.id }}" value="{{ asig.id }}"
