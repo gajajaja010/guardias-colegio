@@ -39,12 +39,6 @@ login_manager.login_view = 'login'
 login_manager.login_message = 'Debes iniciar sesión para acceder.'
 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 
-import traceback as _traceback
-
-@app.errorhandler(500)
-def error_500(e):
-    tb = _traceback.format_exc()
-    return f'<pre style="padding:2rem;white-space:pre-wrap">{tb}</pre>', 500
 
 DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
 
@@ -508,6 +502,30 @@ def _guardar_grupos_profesor(profesor_id, form):
             db.session.add(ProfesorGrupo(profesor_id=profesor_id, grupo_id=g.id, horas_semanales=horas))
 
 
+def _auto_asignar_asignaturas(profesor):
+    """Asigna automáticamente asignaturas según etapa y materias especiales."""
+    LH_BASE = ['Mate', 'Euskera', 'Inguru', 'Tutoretza', 'Plastika']
+    HH_BASE = ['CEA', 'CRR', 'DEE']
+
+    etapas = parse_etapas(profesor.etapa)
+    materias = json.loads(profesor.materias_especiales or '[]')
+
+    nombres = set()
+    if 'Lehen Hezkuntza' in etapas:
+        nombres.update(LH_BASE)
+        nombres.update(materias)
+    if 'Haur Hezkuntza' in etapas:
+        nombres.update(HH_BASE)
+        nombres.update(materias)
+
+    # Borrar asignaciones actuales y reconstruir
+    ProfesorAsignatura.query.filter_by(profesor_id=profesor.id).delete()
+    for nombre in nombres:
+        asig = Asignatura.query.filter_by(nombre=nombre).first()
+        if asig:
+            db.session.add(ProfesorAsignatura(profesor_id=profesor.id, asignatura_id=asig.id))
+
+
 @app.route('/profesores')
 @login_required
 def profesores():
@@ -551,6 +569,7 @@ def nuevo_profesor():
         db.session.add(p)
         db.session.flush()
         _guardar_grupos_profesor(p.id, request.form)
+        _auto_asignar_asignaturas(p)
         db.session.commit()
         if mail_configurado():
             ok = enviar_invitacion(p)
@@ -651,6 +670,7 @@ def editar_profesor(id):
         if nueva_pass:
             p.password_hash = hash_password(nueva_pass)
         _guardar_grupos_profesor(p.id, request.form)
+        _auto_asignar_asignaturas(p)
         db.session.commit()
         flash('Perfil actualizado.', 'success')
         return redirect(url_for('profesores'))
