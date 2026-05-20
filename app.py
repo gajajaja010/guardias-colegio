@@ -1782,11 +1782,26 @@ def generar_horario_automatico():
         for _ in range(n - colocados):
             sin_asignar.append((curso_id, asig_id))
 
-    # Paso 3: tareas normales
-    normal_tasks.sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
+    # Paso 3: tareas normales — round-robin por curso para reparto equitativo
     slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
 
+    # Agrupar por curso y ordenar dentro de cada curso: más restringidas primero
+    tasks_by_course = defaultdict(list)
     for curso_id, asig_id in normal_tasks:
+        tasks_by_course[curso_id].append((curso_id, asig_id))
+    for cid in tasks_by_course:
+        tasks_by_course[cid].sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
+
+    # Entrelazar cursos en round-robin
+    curso_queues = list(tasks_by_course.values())
+    ordered_tasks = []
+    while any(q for q in curso_queues):
+        for q in curso_queues:
+            if q:
+                ordered_tasks.append(q.pop(0))
+
+    pending_retry = []
+    for curso_id, asig_id in ordered_tasks:
         slots_s = slots_all[:]
         random.shuffle(slots_s)
         asignado = False
@@ -1794,6 +1809,26 @@ def generar_horario_automatico():
             cands = candidatos(curso_id, asig_id, dia, franja)
             if cands:
                 do_assign(curso_id, asig_id, dia, franja, cands[0])
+                asignado = True
+                break
+        if not asignado:
+            pending_retry.append((curso_id, asig_id))
+
+    # Segundo intento: tareas no asignadas con límite de horas relajado (+2)
+    for curso_id, asig_id in pending_retry:
+        slots_s = slots_all[:]
+        random.shuffle(slots_s)
+        asignado = False
+        for dia, franja in slots_s:
+            slot = (dia, franja)
+            if slot in curso_ocupado[curso_id]:
+                continue
+            cands_relaxed = [pid for pid in prof_por_asig.get(asig_id, [])
+                             if etapa_compatible(pid, asig_id)
+                             and slot not in profesor_ocupado[pid]
+                             and profesor_horas[pid] < prof_max.get(pid, 25) + 2]
+            if cands_relaxed:
+                do_assign(curso_id, asig_id, dia, franja, cands_relaxed[0])
                 asignado = True
                 break
         if not asignado:
