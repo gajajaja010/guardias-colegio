@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block title %}Grupos de Trabajo{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-people-fill me-2"></i>Grupos de Trabajo</h4>
+</div>
+
+<div class="row g-4">
+  <!-- Formulario nuevo grupo -->
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-plus-circle me-1"></i>Nuevo grupo
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="accion" value="add_grupo">
+          <div class="mb-3">
+            <label class="form-label">Nombre del grupo</label>
+            <input type="text" name="nombre" class="form-control"
+              placeholder="Ej: Coordinación de Ciclo, Comisión Pedagógica..." required>
+          </div>
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-plus-lg me-1"></i>Añadir grupo
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="card mt-3">
+      <div class="card-body text-muted small">
+        <p class="mb-1"><i class="bi bi-info-circle me-1"></i><strong>¿Qué son los grupos de trabajo?</strong></p>
+        <ul class="ps-3 mb-0">
+          <li>Reuniones de coordinación, comisiones, etc.</li>
+          <li>Asigna a cada profesor las horas semanales que dedica a cada grupo.</li>
+          <li>Las horas complementarias se calculan automáticamente sumando todos sus grupos.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lista de grupos -->
+  <div class="col-md-8">
+    {% if grupos %}
+    <div class="accordion" id="acordeonGrupos">
+      {% for g in grupos %}
+      <div class="accordion-item border rounded mb-2">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed py-2 gap-2" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#grupo_{{ g.id }}">
+            <span class="fw-semibold">{{ g.nombre }}</span>
+            <small class="text-muted ms-2">{{ g.miembros|length }} miembro{{ 's' if g.miembros|length != 1 }}</small>
+            <form method="POST" class="ms-auto me-2" onclick="event.stopPropagation()"
+                  onsubmit="return confirm('¿Eliminar «{{ g.nombre }}»?')">
+              <input type="hidden" name="accion" value="delete_grupo">
+              <input type="hidden" name="grupo_id" value="{{ g.id }}">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </button>
+        </h2>
+        <div id="grupo_{{ g.id }}" class="accordion-collapse collapse">
+          <div class="accordion-body pt-2">
+            <form method="POST">
+              <input type="hidden" name="accion" value="guardar_miembros">
+              <input type="hidden" name="grupo_id" value="{{ g.id }}">
+              <table class="table table-sm mb-2">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:40px"></th>
+                    <th>Profesor</th>
+                    <th style="width:150px">Horas/semana</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for p in profesores %}
+                  {% set horas = miembros[g.id].get(p.id, 0) %}
+                  <tr>
+                    <td class="align-middle text-center">
+                      <input class="form-check-input" type="checkbox"
+                             name="miembro_{{ p.id }}" value="1"
+                             id="miembro_{{ g.id }}_{{ p.id }}"
+                             {% if horas %}checked{% endif %}
+                             onchange="this.closest('tr').querySelector('.horas-input').disabled=!this.checked">
+                    </td>
+                    <td class="align-middle">
+                      <label for="miembro_{{ g.id }}_{{ p.id }}" class="mb-0">{{ p.nombre }}</label>
+                    </td>
+                    <td class="align-middle">
+                      <input type="number" name="horas_{{ p.id }}"
+                             class="form-control form-control-sm horas-input"
+                             value="{{ horas if horas else 1 }}"
+                             min="0.5" max="20" step="0.5"
+                             {% if not horas %}disabled{% endif %}>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-floppy me-1"></i>Guardar miembros
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-people display-4 d-block mb-2"></i>
+        No hay grupos de trabajo todavía. Crea el primero.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

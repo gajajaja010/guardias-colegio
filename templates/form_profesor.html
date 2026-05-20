@@ -77,6 +77,31 @@
             <div class="form-text">Horas reservadas para preparación, atención a familias, etc. Se tienen en cuenta al calcular disponibilidad para guardias.</div>
           </div>
 
+          <div class="row">
+            <div class="col-md-4 mb-3">
+              <label class="form-label">Horas lectivas semanales</label>
+              <input type="number" name="horas_lectivas" class="form-control"
+                min="0" max="40" value="{{ profesor.horas_lectivas if profesor else 0 }}"
+                style="width:120px">
+              <div class="form-text">Horas en el aula impartiendo clase.</div>
+            </div>
+            <div class="col-md-4 mb-3">
+              <label class="form-label">Horas libres semanales</label>
+              <input type="number" name="horas_libres" class="form-control"
+                min="0" max="40" value="{{ profesor.horas_libres if profesor else 0 }}"
+                style="width:120px">
+              <div class="form-text">Horas disponibles para hacer guardias.</div>
+            </div>
+            {% if profesor %}
+            <div class="col-md-4 mb-3">
+              <label class="form-label">Horas complementarias</label>
+              <input type="number" class="form-control" value="{{ profesor.horas_complementarias | int }}"
+                style="width:120px" disabled>
+              <div class="form-text">Calculado desde grupos de trabajo.</div>
+            </div>
+            {% endif %}
+          </div>
+
           <div class="mb-3">
             <label class="form-label">Especialidades que puede impartir</label>
             {% set materias_prof = profesor.materias_especiales | from_json if profesor else [] %}

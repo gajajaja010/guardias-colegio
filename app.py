@@ -75,6 +75,8 @@ class Profesor(UserMixin, db.Model):
     fecha_vuelta = db.Column(db.Date)
     horas_max_semanales = db.Column(db.Integer, default=25)
     horas_trabajo_personal = db.Column(db.Integer, default=0)
+    horas_libres = db.Column(db.Integer, default=0)
+    horas_lectivas = db.Column(db.Integer, default=0)
     materias_especiales = db.Column(db.Text, default='[]')  # JSON: ["Inglés", "Música", ...]
     creado = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -82,6 +84,10 @@ class Profesor(UserMixin, db.Model):
     indisponibilidades = db.relationship('Indisponibilidad', backref='profesor', lazy=True, cascade='all, delete-orphan')
     guardias_asignadas = db.relationship('Guardia', foreign_keys='Guardia.profesor_asignado_id', backref='profesor_asignado', lazy=True)
     ausencias = db.relationship('Ausencia', foreign_keys='Ausencia.profesor_id', backref='profesor', lazy=True)
+
+    @property
+    def horas_complementarias(self):
+        return sum(g.horas_semanales for g in self.grupos)
 
     @property
     def total_guardias(self):
@@ -124,6 +130,20 @@ class Profesor(UserMixin, db.Model):
         if indisponible:
             return False
         return True
+
+
+class GrupoTrabajo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    miembros = db.relationship('ProfesorGrupo', backref='grupo', lazy=True, cascade='all, delete-orphan')
+
+
+class ProfesorGrupo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    profesor_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=False)
+    grupo_id = db.Column(db.Integer, db.ForeignKey('grupo_trabajo.id'), nullable=False)
+    horas_semanales = db.Column(db.Float, default=1)
+    profesor = db.relationship('Profesor', backref=db.backref('grupos', lazy=True))
 
 
 class HorarioProfesor(db.Model):
@@ -503,6 +523,8 @@ def nuevo_profesor():
             es_especialista=bool(request.form.get('es_especialista')),
             es_pt=bool(request.form.get('es_pt')),
             horas_trabajo_personal=int(request.form.get('horas_trabajo_personal', 0) or 0),
+            horas_libres=int(request.form.get('horas_libres', 0) or 0),
+            horas_lectivas=int(request.form.get('horas_lectivas', 0) or 0),
             materias_especiales=json.dumps(request.form.getlist('materias_especiales')),
         )
         db.session.add(p)
@@ -592,6 +614,8 @@ def editar_profesor(id):
         p.aula_tutoria = request.form.get('aula_tutoria', '').strip() or None
         p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
         p.horas_trabajo_personal = int(request.form.get('horas_trabajo_personal', 0) or 0)
+        p.horas_libres = int(request.form.get('horas_libres', 0) or 0)
+        p.horas_lectivas = int(request.form.get('horas_lectivas', 0) or 0)
         p.materias_especiales = json.dumps(request.form.getlist('materias_especiales'))
         if current_user.es_admin:
             p.es_admin = bool(request.form.get('es_admin'))
@@ -1258,6 +1282,49 @@ def tutorias():
     }
     return render_template('tutorias.html',
         cursos=cursos, profesores=profesores_lista, tutores=tutores)
+
+
+# ───────────────────────────── GRUPOS DE TRABAJO ─────────────────────────────
+
+@app.route('/grupos-trabajo', methods=['GET', 'POST'])
+@login_required
+def grupos_trabajo():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        accion = request.form.get('accion')
+        if accion == 'add_grupo':
+            nombre = request.form.get('nombre', '').strip()
+            if nombre and not GrupoTrabajo.query.filter_by(nombre=nombre).first():
+                db.session.add(GrupoTrabajo(nombre=nombre))
+                db.session.commit()
+                flash(f'Grupo «{nombre}» creado.', 'success')
+            else:
+                flash('Nombre vacío o ya existe.', 'danger')
+        elif accion == 'delete_grupo':
+            g = GrupoTrabajo.query.get_or_404(int(request.form.get('grupo_id')))
+            db.session.delete(g)
+            db.session.commit()
+            flash('Grupo eliminado.', 'success')
+        elif accion == 'guardar_miembros':
+            grupo_id = int(request.form.get('grupo_id'))
+            g = GrupoTrabajo.query.get_or_404(grupo_id)
+            # Delete existing and re-create from form
+            ProfesorGrupo.query.filter_by(grupo_id=grupo_id).delete()
+            for p in Profesor.query.filter_by(activo=True).all():
+                key = f'horas_{p.id}'
+                if key in request.form and request.form.get(f'miembro_{p.id}'):
+                    horas = float(request.form.get(key) or 0)
+                    if horas > 0:
+                        db.session.add(ProfesorGrupo(
+                            profesor_id=p.id, grupo_id=grupo_id, horas_semanales=horas))
+            db.session.commit()
+            flash('Miembros actualizados.', 'success')
+        return redirect(url_for('grupos_trabajo'))
+    grupos = GrupoTrabajo.query.order_by(GrupoTrabajo.nombre).all()
+    profesores = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
+    miembros = {g.id: {m.profesor_id: m.horas_semanales for m in g.miembros} for g in grupos}
+    return render_template('grupos_trabajo.html', grupos=grupos, profesores=profesores, miembros=miembros)
 
 
 # ───────────────────────────── SEED DATOS ─────────────────────────────
@@ -2054,6 +2121,8 @@ def init_db():
         'ALTER TABLE regla_horario ADD COLUMN dureza VARCHAR(10) DEFAULT \'dura\'',
         'ALTER TABLE regla_horario ADD COLUMN profesor_id INTEGER REFERENCES profesor(id)',
         'ALTER TABLE regla_horario ADD COLUMN curso_id_regla INTEGER REFERENCES curso(id)',
+        'ALTER TABLE profesor ADD COLUMN horas_libres INTEGER DEFAULT 0',
+        'ALTER TABLE profesor ADD COLUMN horas_lectivas INTEGER DEFAULT 0',
     ]
     for sql in migrations:
         try:
