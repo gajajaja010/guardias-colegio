@@ -1449,12 +1449,16 @@ def importar_datos_iniciales():
             creados['cursos'] += 1
     db.session.flush()
 
-    # Determinar etapa de cada asignatura según en qué cursos aparece
+    # Determinar etapa de cada asignatura: None si aparece en varias etapas
     _etapa_asig = {}
     for curso_nombre, asigs in _SEED_HORARIO.items():
         etapa = 'Haur Hezkuntza' if curso_nombre.startswith('HH') else 'Lehen Hezkuntza'
         for nombre in asigs:
-            _etapa_asig.setdefault(nombre, etapa)
+            if nombre in _etapa_asig:
+                if _etapa_asig[nombre] != etapa:
+                    _etapa_asig[nombre] = None  # aparece en ambas etapas → sin restricción
+            else:
+                _etapa_asig[nombre] = etapa
 
     for nombre, etapa in _etapa_asig.items():
         asig = Asignatura.query.filter_by(nombre=nombre).first()
@@ -2515,6 +2519,8 @@ def init_db():
             tipo VARCHAR(20) DEFAULT 'libre',
             grupo_id INTEGER REFERENCES grupo_trabajo(id)
         )""",
+        # Asignaturas que aparecen en HH y LH deben tener etapa NULL
+        "UPDATE asignatura SET etapa = NULL WHERE nombre IN ('Inglés','Religión') AND etapa IS NOT NULL",
     ]
     for sql in migrations:
         try:
