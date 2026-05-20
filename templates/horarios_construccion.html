@@ -77,7 +77,7 @@
   <div class="col-md-8">
     {% if asignaturas %}
     {% set etapa_labels = {'Haur Hezkuntza': 'info', 'Lehen Hezkuntza': 'success', '1-2 años': 'warning', '': 'secondary'} %}
-    {% for etapa_grupo, grupo_asigs in asignaturas | groupby('etapa') %}
+    {% for etapa_grupo, grupo_asigs in asignaturas | groupby('etapa', default='') %}
     <div class="mb-1">
       <div class="d-flex align-items-center gap-2 mb-2 mt-3">
         <span class="badge bg-{{ etapa_labels.get(etapa_grupo, 'secondary') }} px-3 py-1" style="font-size:.85rem;">
