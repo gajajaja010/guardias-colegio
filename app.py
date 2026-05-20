@@ -1684,33 +1684,29 @@ def generar_horario_automatico():
         excl_f = rp_excluir_franja.get(slot, set())
         cands = [p for p in cands if p not in excl_c and p not in excl_f]
 
-        # Si hay profs forzados para este curso, restringir a ellos
+        # Restricciones duras de fijación — si aplican, siempre restringen aunque
+        # el resultado sea vacío (regla dura = no hay alternativa).
+        # Orden de especificidad: curso+asignatura > asignatura > curso
         fij_c = rp_fijar_curso.get(curso_id, set())
         if fij_c:
-            restricted = [p for p in cands if p in fij_c]
-            if restricted:
-                cands = restricted
+            cands = [p for p in cands if p in fij_c]
 
-        # Si hay profs forzados para esta asignatura, restringir a ellos
         fij_a = rp_fijar_asignatura.get(asig_id, set())
         if fij_a:
-            restricted = [p for p in cands if p in fij_a]
-            if restricted:
-                cands = restricted
+            cands = [p for p in cands if p in fij_a]
 
-        # Si hay profs forzados para este curso+asignatura, restringir a ellos (más específico)
         fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
         if fij_ca:
-            restricted = [p for p in cands if p in fij_ca]
-            if restricted:
-                cands = restricted
+            cands = [p for p in cands if p in fij_ca]
+
+        if not cands:
+            return []
 
         # Regla asig_unico_prof
         # Excepción: si hay múltiples profesores fijados para este curso+asignatura
         # (cotutores), no se aplica asig_unico_prof — se rota entre ellos
         # priorizando al que menos horas lleva asignadas.
-        fij_ca_profs = rp_fijar_curso_asig.get((curso_id, asig_id), set())
-        multi_fijados = len(fij_ca_profs) > 1
+        multi_fijados = len(fij_ca) > 1
         if regla_unico_prof and not multi_fijados:
             prof_ya = asig_prof_asignado.get((curso_id, asig_id))
             if prof_ya is not None:
@@ -1719,19 +1715,16 @@ def generar_horario_automatico():
                 else:
                     if prof_ya in cands:
                         cands = [prof_ya] + [p for p in cands if p != prof_ya]
-        elif multi_fijados and cands:
+        elif multi_fijados:
             # Cotutores: rotar por el que menos horas lleva
             cands = sorted(cands, key=lambda p: profesor_horas[p])
 
-        # Regla tutor_clase_etapa: en esta etapa el tutor imparte esta asig
+        # Regla tutor_clase_etapa: en esta etapa el tutor imparte esta asig (regla dura)
         etapa_curso = curso_etapa.get(curso_id)
         nombre_curso = curso_nombre.get(curso_id, '')
         tutor_ids_curso = set(prof_tutoria.get(nombre_curso, []))
         if etapa_curso and asig_id in reglas_tutor_etapa_dura.get(etapa_curso, set()):
-            # Dura: solo el tutor del curso puede impartirla
-            restricted = [p for p in cands if p in tutor_ids_curso]
-            if restricted:
-                cands = restricted
+            cands = [p for p in cands if p in tutor_ids_curso]
 
         if not cands:
             return []
@@ -1808,19 +1801,13 @@ def generar_horario_automatico():
                           and all(pid not in rp_excluir_franja.get(s, set()) for s in seq)]
                 fij_c = rp_fijar_curso.get(curso_id, set())
                 if fij_c:
-                    r = [p for p in common if p in fij_c]
-                    if r:
-                        common = r
+                    common = [p for p in common if p in fij_c]
                 fij_a = rp_fijar_asignatura.get(asig_id, set())
                 if fij_a:
-                    r = [p for p in common if p in fij_a]
-                    if r:
-                        common = r
+                    common = [p for p in common if p in fij_a]
                 fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
                 if fij_ca:
-                    r = [p for p in common if p in fij_ca]
-                    if r:
-                        common = r
+                    common = [p for p in common if p in fij_ca]
                 if not common:
                     continue
                 random.shuffle(common)
