@@ -2098,14 +2098,19 @@ def generar_horario_hc():
     if not current_user.es_admin:
         return redirect(url_for('dashboard'))
     sin_asignar = generar_horario_automatico()
-    _asignar_grupos_trabajo()
+    _, grupos_sin_hueco = _asignar_grupos_trabajo()
+    avisos = []
     if sin_asignar:
         nombres = []
         for curso_id, asig_id in sin_asignar[:5]:
             c = Curso.query.get(curso_id)
             a = Asignatura.query.get(asig_id)
             nombres.append(f'{a.nombre} ({c.nombre})')
-        flash(f'Horario generado. No se pudieron asignar: {", ".join(nombres)}', 'warning')
+        avisos.append(f'Sin asignar: {", ".join(nombres)}')
+    if grupos_sin_hueco:
+        avisos.append(f'Sin hueco común: {", ".join(grupos_sin_hueco)}')
+    if avisos:
+        flash('Horario generado con advertencias — ' + ' | '.join(avisos), 'warning')
     else:
         flash('Horario generado correctamente con grupos de trabajo asignados.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario'))
@@ -2173,20 +2178,22 @@ def _asignar_grupos_trabajo():
     prof_slots_grupo = defaultdict(int)
 
     grupos = GrupoTrabajo.query.order_by(GrupoTrabajo.id).all()
+    grupos_sin_hueco = []
     for grupo in grupos:
         miembros = ProfesorGrupo.query.filter_by(grupo_id=grupo.id).all()
         if not miembros:
             continue
 
-        # Slots compartidos = mínimo de horas (ceil) entre miembros — todos coinciden
-        min_horas = math.ceil(min(m.horas_semanales for m in miembros))
+        # Regla dura: todos los miembros coinciden en el mismo slot.
+        # Se buscan tantos slots compartidos como el máximo de horas de cualquier miembro.
+        max_horas = math.ceil(max(m.horas_semanales for m in miembros))
         slots_s = slots_all[:]
         random.shuffle(slots_s)
         prof_ids = [m.profesor_id for m in miembros]
 
         colocados = 0
         for dia, franja in slots_s:
-            if colocados >= min_horas:
+            if colocados >= max_horas:
                 break
             slot = (dia, franja)
             if all(slot not in prof_ocupado[pid] for pid in prof_ids):
@@ -2199,27 +2206,8 @@ def _asignar_grupos_trabajo():
                     prof_slots_grupo[pid] += 1
                 colocados += 1
 
-        # Horas extra o fallback individual si no se encontró slot común
-        for m in miembros:
-            necesita = math.ceil(m.horas_semanales)
-            ya_tiene = prof_slots_grupo[m.profesor_id]
-            pendiente = necesita - ya_tiene
-            if pendiente <= 0:
-                continue
-            random.shuffle(slots_s)
-            colocados_extra = 0
-            for dia, franja in slots_s:
-                if colocados_extra >= pendiente:
-                    break
-                slot = (dia, franja)
-                if slot not in prof_ocupado[m.profesor_id]:
-                    db.session.add(SlotComplementaria(
-                        profesor_id=m.profesor_id, dia=dia, franja=franja,
-                        tipo='grupo', grupo_id=grupo.id
-                    ))
-                    prof_ocupado[m.profesor_id].add(slot)
-                    prof_slots_grupo[m.profesor_id] += 1
-                    colocados_extra += 1
+        if colocados < max_horas:
+            grupos_sin_hueco.append(f'{grupo.nombre} ({colocados}/{max_horas})')
 
     # Slots de complementaria libre individual (int = floor, para respetar 2.5 → 2 slots)
     # La fracción de 0.5 se combina con un slot de grupo existente (tipo2='libre')
@@ -2259,7 +2247,7 @@ def _asignar_grupos_trabajo():
             grupo_slot.tipo2 = 'libre'
 
     db.session.commit()
-    return len(grupos)
+    return len(grupos), grupos_sin_hueco
 
 
 @app.route('/horarios-construccion/generar-complementarias', methods=['POST'])
@@ -2267,8 +2255,11 @@ def _asignar_grupos_trabajo():
 def generar_complementarias_hc():
     if not current_user.es_admin:
         return redirect(url_for('dashboard'))
-    _asignar_grupos_trabajo()
-    flash('Grupos de trabajo asignados correctamente.', 'success')
+    _, sin_hueco = _asignar_grupos_trabajo()
+    if sin_hueco:
+        flash(f'No se encontró hueco común para: {", ".join(sin_hueco)}. Revisa los horarios de esos profesores.', 'warning')
+    else:
+        flash('Grupos de trabajo asignados correctamente.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario', vista='profesor'))
 
 
