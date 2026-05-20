@@ -1468,6 +1468,7 @@ def generar_horario_automatico():
     reglas_consecutivas = {}
     reglas_fijar = {}
     regla_tutor_primera = False
+    regla_unico_prof = False
 
     # Reglas generales por clase (etapa): tutor imparte asignatura en su clase
     # etapa -> asig_id -> dureza ('dura'|'blanda')
@@ -1495,6 +1496,8 @@ def generar_horario_automatico():
             reglas_fijar[r.asignatura_id] = (r.dia, r.franja)
         elif r.tipo == 'tutor_primera':
             regla_tutor_primera = True
+        elif r.tipo == 'asig_unico_prof':
+            regla_unico_prof = True
         elif r.tipo == 'tutor_clase_etapa' and r.etapa and r.asignatura_id:
             if r.dureza == 'dura':
                 reglas_tutor_etapa_dura[r.etapa].add(r.asignatura_id)
@@ -1579,6 +1582,8 @@ def generar_horario_automatico():
         prof_max[pid] = mx
 
     sin_asignar = []
+    # (curso_id, asig_id) -> prof_id ya asignado para esa combinación
+    asig_prof_asignado = {}
 
     def do_assign(curso_id, asig_id, dia, franja, prof_id):
         slot = (dia, franja)
@@ -1590,6 +1595,7 @@ def generar_horario_automatico():
         curso_ocupado[curso_id].add(slot)
         profesor_horas[prof_id] += 1
         asig_dia_count[(curso_id, asig_id, dia)] += 1
+        asig_prof_asignado.setdefault((curso_id, asig_id), prof_id)
 
     def do_assign_paired(curso_id, asig_id1, asig_id2, prof_id1, prof_id2, dia, franja):
         slot = (dia, franja)
@@ -1608,6 +1614,8 @@ def generar_horario_automatico():
             profesor_horas[prof_id2] += 1
         asig_dia_count[(curso_id, asig_id1, dia)] += 1
         asig_dia_count[(curso_id, asig_id2, dia)] += 1
+        asig_prof_asignado.setdefault((curso_id, asig_id1), prof_id1)
+        asig_prof_asignado.setdefault((curso_id, asig_id2), prof_id2)
 
     def candidatos(curso_id, asig_id, dia, franja):
         slot = (dia, franja)
@@ -1639,6 +1647,12 @@ def generar_horario_automatico():
             restricted = [p for p in cands if p in fij_a]
             if restricted:
                 cands = restricted
+
+        # Regla asig_unico_prof: si ya hay un prof asignado para esta asig en este curso, solo él
+        if regla_unico_prof:
+            prof_ya = asig_prof_asignado.get((curso_id, asig_id))
+            if prof_ya is not None:
+                cands = [prof_ya] if prof_ya in cands else []
 
         # Regla tutor_clase_etapa: en esta etapa el tutor imparte esta asig
         etapa_curso = curso_etapa.get(curso_id)
@@ -2292,6 +2306,10 @@ def init_db():
                 conn.commit()
         except Exception:
             pass
+    if not ReglaHorario.query.filter_by(tipo='asig_unico_prof').first():
+        db.session.add(ReglaHorario(tipo='asig_unico_prof', dureza='dura'))
+        db.session.commit()
+
     if not Profesor.query.filter_by(es_admin=True).first():
         admin = Profesor(
             nombre='Administrador',

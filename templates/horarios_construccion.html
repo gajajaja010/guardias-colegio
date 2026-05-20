@@ -681,6 +681,7 @@
                 <option value="consecutivas">Horas seguidas (robótica, etc.)</option>
                 <option value="fijar_franja">Fijar a un día y hora concretos</option>
                 <option value="tutor_primera">Tutor a primera hora</option>
+                <option value="asig_unico_prof">Un único profesor por asignatura y clase</option>
               </select>
             </div>
             <div id="campoAsig" class="mb-3">
@@ -853,12 +854,38 @@
       </div>
       <div class="card-body p-0">
         {% set reglas_gen = reglas|selectattr('tipo','equalto','tutor_clase_etapa')|list %}
-        {% set reglas_asig = reglas|rejectattr('profesor_regla')|rejectattr('tipo','equalto','tutor_clase_etapa')|list %}
+        {% set reglas_sistema = reglas|selectattr('tipo','equalto','asig_unico_prof')|list %}
+        {% set reglas_asig = reglas|rejectattr('profesor_regla')|rejectattr('tipo','equalto','tutor_clase_etapa')|rejectattr('tipo','equalto','asig_unico_prof')|list %}
         {% set reglas_prof = reglas|selectattr('profesor_regla')|list %}
         {% if reglas %}
 
+        {% if reglas_sistema %}
+        <div class="px-3 pt-3 pb-1 text-muted small fw-semibold text-uppercase">Reglas globales</div>
+        <table class="table table-sm table-hover mb-0">
+          <tbody>
+            {% for r in reglas_sistema %}
+            <tr>
+              <td class="align-middle" style="width:100px">
+                <span class="badge bg-danger">Dura</span>
+              </td>
+              <td class="align-middle">
+                {% if r.tipo == 'asig_unico_prof' %}
+                <i class="bi bi-person-check me-1"></i>Un único profesor por asignatura y clase
+                {% endif %}
+              </td>
+              <td class="align-middle text-end">
+                <form method="POST" action="{{ url_for('delete_regla_hc', regla_id=r.id) }}" onsubmit="return confirm('¿Eliminar esta regla global?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
         {% if reglas_asig %}
-        <div class="px-3 pt-3 pb-1 text-muted small fw-semibold text-uppercase">Reglas de asignatura</div>
+        <div class="px-3 pt-3 pb-1 text-muted small fw-semibold text-uppercase {% if reglas_sistema %}border-top{% endif %}">Reglas de asignatura</div>
         <table class="table table-sm table-hover mb-0">
           <tbody>
             {% for r in reglas_asig %}
@@ -1032,6 +1059,8 @@ function updateReglaFields() {
       show('campoDia'); show('campoFranja');
     } else if (tipo === 'tutor_primera') {
       hide('campoAsig'); show('infoTutor');
+    } else if (tipo === 'asig_unico_prof') {
+      hide('campoAsig');
     }
   }
 }
