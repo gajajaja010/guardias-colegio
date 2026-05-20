@@ -656,12 +656,25 @@
           {# — Tipos asignatura — #}
           <div id="secAsig">
             <div class="mb-3">
+              <label class="form-label">Dureza</label>
+              <div class="d-flex gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="dureza" value="dura" id="asigDuraDura" checked>
+                  <label class="form-check-label" for="asigDuraDura"><span class="badge bg-danger">Dura</span> — siempre</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="dureza" value="blanda" id="asigDuraBlanda">
+                  <label class="form-check-label" for="asigDuraBlanda"><span class="badge bg-secondary">Blanda</span> — preferida</label>
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
               <label class="form-label">Tipo</label>
               <select name="tipo" id="tipoAsig" class="form-select" onchange="updateReglaFields()">
                 <option value="max_dia">Máximo N horas por día</option>
-                <option value="consecutivas">Horas seguidas (robotica, etc.)</option>
+                <option value="consecutivas">Horas seguidas (robótica, etc.)</option>
                 <option value="fijar_franja">Fijar a un día y hora concretos</option>
-                <option value="tutor_primera">Tutor a primera hora (blanda)</option>
+                <option value="tutor_primera">Tutor a primera hora</option>
               </select>
             </div>
             <div id="campoAsig" class="mb-3">
@@ -692,29 +705,38 @@
               </select>
             </div>
             <div id="infoTutor" class="alert alert-info small d-none">
-              <i class="bi bi-info-circle me-1"></i>Preferencia: el tutor imparte a primera hora en su aula.
+              <i class="bi bi-info-circle me-1"></i>El tutor imparte a primera hora en su aula.
             </div>
           </div>
 
           {# — Tipos profesor — #}
           <div id="secProf" class="d-none">
             <div class="mb-3">
+              <label class="form-label">Dureza</label>
+              <div class="d-flex gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="dureza" value="dura" id="profDuraDura" checked onchange="updateProfTipos()">
+                  <label class="form-check-label" for="profDuraDura"><span class="badge bg-danger">Dura</span> — siempre</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="dureza" value="blanda" id="profDuraBlanda" onchange="updateProfTipos()">
+                  <label class="form-check-label" for="profDuraBlanda"><span class="badge bg-secondary">Blanda</span> — preferida</label>
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
               <label class="form-label">Tipo</label>
               <select name="tipo" id="tipoProf" class="form-select" onchange="updateReglaFields()">
-                <optgroup label="Reglas duras (se respetan siempre)">
-                  <option value="prof_excluir_curso">Nunca en este curso</option>
-                  <option value="prof_fijar_curso">Sí o sí en este curso</option>
-                  <option value="prof_excluir_franja">Nunca en este día+franja</option>
-                  <option value="prof_fijar_asignatura">Sí o sí imparte esta asignatura</option>
-                  <option value="prof_max_horas">Máximo N horas en el horario</option>
-                  <option value="prof_min_horas">Mínimo N horas en el horario</option>
-                </optgroup>
-                <optgroup label="Reglas blandas (se intentan)">
-                  <option value="prof_evitar_curso">Intentar no poner en este curso</option>
-                  <option value="prof_preferir_curso">Intentar poner en este curso</option>
-                  <option value="prof_evitar_franja">Intentar evitar este día+franja</option>
-                  <option value="prof_preferir_asignatura">Intentar que imparta esta asignatura</option>
-                </optgroup>
+                <option value="prof_excluir_curso" data-dureza="dura">Excluir de un curso</option>
+                <option value="prof_fijar_curso" data-dureza="dura">Fijar a un curso</option>
+                <option value="prof_excluir_franja" data-dureza="dura">Excluir de día+franja</option>
+                <option value="prof_fijar_asignatura" data-dureza="dura">Fijar a una asignatura</option>
+                <option value="prof_max_horas" data-dureza="dura">Máximo N horas en el horario</option>
+                <option value="prof_min_horas" data-dureza="dura">Mínimo N horas en el horario</option>
+                <option value="prof_evitar_curso" data-dureza="blanda">Evitar un curso</option>
+                <option value="prof_preferir_curso" data-dureza="blanda">Preferir un curso</option>
+                <option value="prof_evitar_franja" data-dureza="blanda">Evitar día+franja</option>
+                <option value="prof_preferir_asignatura" data-dureza="blanda">Preferir una asignatura</option>
               </select>
             </div>
             <div class="mb-3">
@@ -835,9 +857,12 @@
           <tbody>
             {% for r in reglas_asig %}
             <tr>
-              <td class="align-middle" style="width:130px">
+              <td class="align-middle" style="width:160px">
+                <span class="badge {% if r.dureza == 'blanda' %}bg-secondary{% else %}bg-danger{% endif %} me-1">
+                  {% if r.dureza == 'blanda' %}Blanda{% else %}Dura{% endif %}
+                </span>
                 {% if r.tipo == 'max_dia' %}<span class="badge bg-primary">Máx/día</span>
-                {% elif r.tipo == 'consecutivas' %}<span class="badge bg-success">Consecutivas</span>
+                {% elif r.tipo == 'consecutivas' %}<span class="badge bg-success">Seguidas</span>
                 {% elif r.tipo == 'fijar_franja' %}<span class="badge bg-warning text-dark">Fijar franja</span>
                 {% elif r.tipo == 'tutor_primera' %}<span class="badge bg-info text-dark">Tutor 1ª hora</span>
                 {% endif %}
@@ -1005,7 +1030,29 @@ function updateReglaFields() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', updateReglaFields);
+function updateProfTipos() {
+  var dureza = document.querySelector('#secProf input[name="dureza"]:checked');
+  if (!dureza) return;
+  var val = dureza.value;
+  var sel = document.getElementById('tipoProf');
+  var firstVisible = null;
+  Array.from(sel.options).forEach(function(opt) {
+    var show = !opt.dataset.dureza || opt.dataset.dureza === val;
+    opt.hidden = !show;
+    opt.disabled = !show;
+    if (show && !firstVisible) firstVisible = opt;
+  });
+  // Select first visible option if current is hidden
+  if (sel.selectedOptions[0] && sel.selectedOptions[0].hidden && firstVisible) {
+    sel.value = firstVisible.value;
+  }
+  updateReglaFields();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  updateReglaFields();
+  updateProfTipos();
+});
 
 function toggleHoras(checkbox) {
   var row = checkbox.closest('tr');
