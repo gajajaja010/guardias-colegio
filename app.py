@@ -1896,20 +1896,28 @@ def generar_horario_automatico():
 
         return asignados, fallos
 
-    # Bucle sin límite: repite hasta encontrar solución perfecta
+    # Bucle: para cuando fallos=0 o cuando lleva SIN_MEJORA_MAX intentos sin bajar
+    SIN_MEJORA_MAX = 3000
     best_assignments = []
     best_fallos = float('inf')
     intentos = 0
+    sin_mejora = 0
 
-    while best_fallos > 0:
+    while best_fallos > 0 and sin_mejora < SIN_MEJORA_MAX:
         asignados, fallos = _run_fase2()
         intentos += 1
         if fallos < best_fallos:
             best_fallos = fallos
             best_assignments = asignados
+            sin_mejora = 0
             with _gen_lock:
                 _gen_estado['intentos'] = intentos
                 _gen_estado['mejor_fallos'] = best_fallos
+        else:
+            sin_mejora += 1
+            if intentos % 200 == 0:
+                with _gen_lock:
+                    _gen_estado['intentos'] = intentos
 
     # Escribir el mejor resultado a la base de datos
     for curso_id, asig_id, prof_id, dia, franja, asig2, prof2 in best_assignments:
@@ -1923,7 +1931,27 @@ def generar_horario_automatico():
         db.session.add(ha)
 
     db.session.commit()
-    return p1_unassignable, best_fallos
+
+    # Diagnóstico: identificar qué slots del mejor intento quedaron sin franja
+    placed_keys = {(c, a, p) for c, a, p, *_ in best_assignments}
+    needed_keys = [(c, a, p) for c, a, p in p1_normal]
+    diagnostico = []
+    if best_fallos > 0:
+        placed_cnt = defaultdict(int)
+        for c, a, p, *_ in best_assignments:
+            placed_cnt[(c, a, p)] += 1
+        needed_cnt = defaultdict(int)
+        for c, a, p in p1_normal:
+            needed_cnt[(c, a, p)] += 1
+        for (c, a, p), n in needed_cnt.items():
+            colocados = placed_cnt.get((c, a, p), 0)
+            if colocados < n:
+                curso_n = curso_nombre.get(c, str(c))
+                asig_n = asig_map[a].nombre if a in asig_map else str(a)
+                prof_n = next((x.nombre for x in profesores_activos if x.id == p), str(p))
+                diagnostico.append(f'{asig_n} en {curso_n} ({prof_n}): {colocados}/{n}')
+
+    return p1_unassignable, best_fallos, diagnostico
 
 
 # ─── CONSTRUCTOR DE HORARIOS ───
@@ -2139,7 +2167,7 @@ def guardar_especialidades_hc(prof_id):
 def _worker_generar():
     with app.app_context():
         try:
-            sin_asignar_p1, fallos_p2 = generar_horario_automatico()
+            sin_asignar_p1, fallos_p2, diagnostico = generar_horario_automatico()
             _, grupos_sin_hueco = _asignar_grupos_trabajo()
             avisos = []
             if sin_asignar_p1:
@@ -2151,6 +2179,8 @@ def _worker_generar():
                         nombres.append(f'{a.nombre} ({c.nombre})')
                 if nombres:
                     avisos.append(f'Sin asignar (fase 1): {", ".join(nombres)}')
+            if diagnostico:
+                avisos.append(f'Conflicto de horario (sin franja libre): {", ".join(diagnostico[:5])}')
             if grupos_sin_hueco:
                 avisos.append(f'Sin hueco común: {", ".join(grupos_sin_hueco)}')
             with _gen_lock:
