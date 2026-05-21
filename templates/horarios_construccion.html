@@ -804,6 +804,7 @@
                 <option value="prof_fijar_asignatura" data-dureza="dura">Fijar a una asignatura</option>
                 <option value="prof_max_horas" data-dureza="dura">Máximo N horas en el horario</option>
                 <option value="prof_min_horas" data-dureza="dura">Mínimo N horas en el horario</option>
+                <option value="prof_horas_etapa" data-dureza="dura">Fijar horas en una etapa</option>
                 <option value="prof_evitar_curso" data-dureza="blanda">Evitar un curso</option>
                 <option value="prof_preferir_curso" data-dureza="blanda">Preferir un curso</option>
                 <option value="prof_evitar_franja" data-dureza="blanda">Evitar día+franja</option>
@@ -845,6 +846,13 @@
               <select name="franja" class="form-select">
                 <option value="">— Selecciona —</option>
                 {% for f in franjas_clase %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+              </select>
+            </div>
+            <div id="campoEtapaProf" class="mb-3 d-none">
+              <label class="form-label">Etapa educativa</label>
+              <select name="etapa_regla" class="form-select">
+                <option value="">— Selecciona —</option>
+                {% for e in etapas %}<option value="{{ e }}">{{ e }}</option>{% endfor %}
               </select>
             </div>
             <div id="campoValorProf" class="mb-3 d-none">
@@ -990,7 +998,7 @@
             {% for r in reglas_prof %}
             <tr>
               <td class="align-middle" style="width:130px">
-                {% set es_dura = r.tipo in ('prof_excluir_curso','prof_fijar_curso','prof_fijar_curso_asignatura','prof_excluir_franja','prof_fijar_asignatura','prof_min_horas','prof_max_horas') %}
+                {% set es_dura = r.tipo in ('prof_excluir_curso','prof_fijar_curso','prof_fijar_curso_asignatura','prof_excluir_franja','prof_fijar_asignatura','prof_min_horas','prof_max_horas','prof_horas_etapa') %}
                 <span class="badge {% if es_dura %}bg-danger{% else %}bg-secondary{% endif %}">
                   {% if es_dura %}Dura{% else %}Blanda{% endif %}
                 </span>
@@ -1004,6 +1012,7 @@
                 {% elif r.tipo == 'prof_fijar_curso_asignatura' %}Sí o sí imparte {{ r.asignatura.nombre if r.asignatura else '?' }} en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
                 {% elif r.tipo == 'prof_max_horas' %}Máx {{ r.valor }}h en horario
                 {% elif r.tipo == 'prof_min_horas' %}Mín {{ r.valor }}h en horario
+                {% elif r.tipo == 'prof_horas_etapa' %}Exactamente {{ r.valor }}h en <span class="badge bg-info text-dark">{{ r.etapa or '?' }}</span>
                 {% elif r.tipo == 'prof_evitar_curso' %}Intentar no poner en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
                 {% elif r.tipo == 'prof_preferir_curso' %}Intentar poner en {{ r.curso_regla.nombre if r.curso_regla else '?' }}
                 {% elif r.tipo == 'prof_evitar_franja' %}Intentar evitar {{ r.dia }} {{ r.franja }}
@@ -1095,7 +1104,7 @@ function updateReglaFields() {
   if (val === 'prof') {
     show('secProf'); enableSec('secProf');
     var tipo = document.getElementById('tipoProf').value;
-    ['campoCursoProf','campoAsigProf','campoDiaProf','campoFranjaProf','campoValorProf'].forEach(hide);
+    ['campoCursoProf','campoAsigProf','campoDiaProf','campoFranjaProf','campoEtapaProf','campoValorProf'].forEach(hide);
     if (['prof_excluir_curso','prof_fijar_curso','prof_evitar_curso','prof_preferir_curso'].includes(tipo)) {
       show('campoCursoProf');
     } else if (tipo === 'prof_fijar_curso_asignatura') {
@@ -1108,6 +1117,9 @@ function updateReglaFields() {
       show('campoValorProf');
       document.getElementById('labelValorProf').textContent =
         tipo === 'prof_max_horas' ? 'Máximo de horas en el horario' : 'Mínimo de horas en el horario';
+    } else if (tipo === 'prof_horas_etapa') {
+      show('campoEtapaProf'); show('campoValorProf');
+      document.getElementById('labelValorProf').textContent = 'Horas en esa etapa';
     }
   } else if (val === 'gen') {
     show('secGen'); enableSec('secGen');
