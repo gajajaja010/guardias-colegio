@@ -1953,10 +1953,10 @@ def generar_horario_automatico():
             return cnt
 
         pendientes = normal_items[:]
-        random.shuffle(pendientes)  # desempate aleatorio
+        random.shuffle(pendientes)
         while pendientes:
-            # Ordenar por opciones disponibles (menos opciones = más urgente)
-            pendientes.sort(key=lambda x: _opciones(x[0], x[1], x[2]))
+            # Más restringido primero; ruido aleatorio como desempate para variar entre intentos
+            pendientes.sort(key=lambda x: (_opciones(x[0], x[1], x[2]), random.random()))
             curso_id, asig_id, prof_id = pendientes.pop(0)
             prefer = regla_tutor_primera and curso_id in tutor_cursos.get(prof_id, set())
             dia, franja = _find(curso_id, asig_id, prof_id, prefer_primera=prefer)
@@ -2383,30 +2383,41 @@ def _asignar_grupos_trabajo():
         if not miembros:
             continue
 
-        # Regla dura: todos los miembros coinciden en el mismo slot.
-        # Se buscan tantos slots compartidos como el máximo de horas de cualquier miembro.
+        # Regla dura: todos los miembros coinciden en los mismos slots.
+        # Se buscan tantos slots compartidos como el máximo de horas (redondeado arriba).
         max_horas = math.ceil(max(m.horas_semanales for m in miembros))
         slots_s = slots_all[:]
         random.shuffle(slots_s)
         prof_ids = [m.profesor_id for m in miembros]
+        miembro_map = {m.profesor_id: m for m in miembros}
 
-        colocados = 0
+        shared_slots = []
         for dia, franja in slots_s:
-            if colocados >= max_horas:
+            if len(shared_slots) >= max_horas:
                 break
             slot = (dia, franja)
             if all(slot not in prof_ocupado[pid] for pid in prof_ids):
+                shared_slots.append(slot)
                 for pid in prof_ids:
-                    db.session.add(SlotComplementaria(
-                        profesor_id=pid, dia=dia, franja=franja,
-                        tipo='grupo', grupo_id=grupo.id
-                    ))
                     prof_ocupado[pid].add(slot)
-                    prof_slots_grupo[pid] += 1
-                colocados += 1
 
-        if colocados < max_horas:
-            grupos_sin_hueco.append(f'{grupo.nombre} ({colocados}/{max_horas})')
+        if len(shared_slots) < max_horas:
+            grupos_sin_hueco.append(f'{grupo.nombre} ({len(shared_slots)}/{max_horas})')
+
+        # Crear slots por miembro según sus horas individuales
+        for pid in prof_ids:
+            m = miembro_map[pid]
+            n_slots = math.ceil(m.horas_semanales)
+            tiene_fraccion = (m.horas_semanales % 1) >= 0.5
+            for i, (dia, franja) in enumerate(shared_slots[:n_slots]):
+                # El último slot de un miembro con fracción se marca como media hora
+                es_ultimo = (i == n_slots - 1)
+                tipo2 = 'media' if (es_ultimo and tiene_fraccion) else None
+                db.session.add(SlotComplementaria(
+                    profesor_id=pid, dia=dia, franja=franja,
+                    tipo='grupo', grupo_id=grupo.id, tipo2=tipo2
+                ))
+                prof_slots_grupo[pid] += 1
 
     # Slots de complementaria libre individual (int = floor, para respetar 2.5 → 2 slots)
     # La fracción de 0.5 se combina con un slot de grupo existente (tipo2='libre')
