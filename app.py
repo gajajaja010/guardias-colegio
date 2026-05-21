@@ -1615,172 +1615,238 @@ def generar_horario_automatico():
             return True
         return asig.etapa in etapas_prof
 
+    # ══════════════════════════════════════════════════════════════════════
+    # FASE 1 — Asignación: ¿quién da qué en qué clase?
+    # Más restringido primero. Reglas duras son absolutas — si no hay
+    # candidato válido el slot queda sin asignar (no se viola ninguna regla).
+    # ══════════════════════════════════════════════════════════════════════
+    import math
+
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
     primera_franja = franjas_clase[0] if franjas_clase else None
 
-    profesor_ocupado = defaultdict(set)
-    curso_ocupado = defaultdict(set)
-    profesor_horas = defaultdict(int)
-    asig_dia_count = defaultdict(int)  # (curso_id, asig_id, dia) -> count
-    # Límite de horas lectivas: usa horas_lectivas si está configurado, si no horas_max_semanales
     prof_max = {
         p.id: int(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
         for p in profesores_activos
     }
-    # Override max horas from prof rules
     for pid, mx in rp_max_horas.items():
         prof_max[pid] = mx
 
-    sin_asignar = []
-    # (curso_id, asig_id) -> prof_id ya asignado para esa combinación
-    asig_prof_asignado = {}
-
-    def do_assign(curso_id, asig_id, dia, franja, prof_id):
-        slot = (dia, franja)
-        db.session.add(HorarioAsignacion(
-            curso_id=curso_id, asignatura_id=asig_id,
-            profesor_id=prof_id, dia=dia, franja=franja
-        ))
-        profesor_ocupado[prof_id].add(slot)
-        curso_ocupado[curso_id].add(slot)
-        profesor_horas[prof_id] += 1
-        asig_dia_count[(curso_id, asig_id, dia)] += 1
-        asig_prof_asignado.setdefault((curso_id, asig_id), prof_id)
-
-    def do_assign_paired(curso_id, asig_id1, asig_id2, prof_id1, prof_id2, dia, franja):
-        slot = (dia, franja)
-        db.session.add(HorarioAsignacion(
-            curso_id=curso_id,
-            asignatura_id=asig_id1, profesor_id=prof_id1,
-            asignatura2_id=asig_id2, profesor2_id=prof_id2,
-            dia=dia, franja=franja
-        ))
-        profesor_ocupado[prof_id1].add(slot)
-        if prof_id2 != prof_id1:
-            profesor_ocupado[prof_id2].add(slot)
-        curso_ocupado[curso_id].add(slot)
-        profesor_horas[prof_id1] += 1
-        if prof_id2 != prof_id1:
-            profesor_horas[prof_id2] += 1
-        asig_dia_count[(curso_id, asig_id1, dia)] += 1
-        asig_dia_count[(curso_id, asig_id2, dia)] += 1
-        asig_prof_asignado.setdefault((curso_id, asig_id1), prof_id1)
-        asig_prof_asignado.setdefault((curso_id, asig_id2), prof_id2)
-
-    def candidatos(curso_id, asig_id, dia, franja):
-        slot = (dia, franja)
-        if slot in curso_ocupado[curso_id]:
-            return []
-        max_d = reglas_max_dia.get(asig_id)
-        if max_d and asig_dia_count[(curso_id, asig_id, dia)] >= max_d:
-            return []
-        cands = [pid for pid in prof_por_asig.get(asig_id, [])
-                 if etapa_compatible(pid, asig_id)
-                 and slot not in profesor_ocupado[pid]
-                 and profesor_horas[pid] < prof_max.get(pid, 25)]
-
-        # Reglas duras de profesor
-        excl_c = rp_excluir_curso.get(curso_id, set())
-        excl_f = rp_excluir_franja.get(slot, set())
-        cands = [p for p in cands if p not in excl_c and p not in excl_f]
-
-        # Restricciones duras de fijación — si aplican, siempre restringen aunque
-        # el resultado sea vacío (regla dura = no hay alternativa).
-        # Orden de especificidad: curso+asignatura > asignatura > curso
-        fij_c = rp_fijar_curso.get(curso_id, set())
-        if fij_c:
-            cands = [p for p in cands if p in fij_c]
-
-        fij_a = rp_fijar_asignatura.get(asig_id, set())
-        if fij_a:
-            cands = [p for p in cands if p in fij_a]
-
+    def eligible_for(curso_id, asig_id):
+        """Profesores elegibles para (curso, asig) tras aplicar todas las reglas duras."""
+        profs = {pid for pid in prof_por_asig.get(asig_id, [])
+                 if etapa_compatible(pid, asig_id)}
+        profs -= rp_excluir_curso.get(curso_id, set())
         fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
         if fij_ca:
-            cands = [p for p in cands if p in fij_ca]
+            return profs & fij_ca
+        fij_a = rp_fijar_asignatura.get(asig_id, set())
+        if fij_a:
+            profs &= fij_a
+        fij_c = rp_fijar_curso.get(curso_id, set())
+        if fij_c:
+            profs &= fij_c
+        etapa = curso_etapa.get(curso_id)
+        if etapa and asig_id in reglas_tutor_etapa_dura.get(etapa, set()):
+            tutores = set(prof_tutoria.get(curso_nombre.get(curso_id, ''), []))
+            profs &= tutores
+        return profs
 
-        if not cands:
-            return []
+    def sort_eligible(profs, curso_id, asig_id, load):
+        """Ordena candidatos: tutores/preferidos primero, evitados al final."""
+        etapa = curso_etapa.get(curso_id)
+        tutores = set(prof_tutoria.get(curso_nombre.get(curso_id, ''), []))
+        preferir = rp_preferir_curso.get(curso_id, set()) | rp_preferir_asignatura.get(asig_id, set())
+        evitar = rp_evitar_curso.get(curso_id, set())
+        blanda_tutor = bool(etapa and asig_id in reglas_tutor_etapa_blanda.get(etapa, set()))
+        def key(p):
+            if blanda_tutor and p in tutores:
+                tier = 0
+            elif p in preferir:
+                tier = 1
+            elif p in evitar:
+                tier = 3
+            else:
+                tier = 2
+            return (tier, load[p])
+        return sorted(profs, key=key)
 
-        # Regla asig_unico_prof
-        # Excepción: si hay múltiples profesores fijados para este curso+asignatura
-        # (cotutores), no se aplica asig_unico_prof — se rota entre ellos
-        # priorizando al que menos horas lleva asignadas.
-        multi_fijados = len(fij_ca) > 1
-        if regla_unico_prof and not multi_fijados:
-            prof_ya = asig_prof_asignado.get((curso_id, asig_id))
-            if prof_ya is not None:
-                if regla_unico_prof == 'dura':
-                    cands = [prof_ya] if prof_ya in cands else []
-                else:
-                    if prof_ya in cands:
-                        cands = [prof_ya] + [p for p in cands if p != prof_ya]
-        elif multi_fijados:
-            # Cotutores: rotar por el que menos horas lleva
-            cands = sorted(cands, key=lambda p: profesor_horas[p])
+    prof_load = defaultdict(int)
+    p1_normal = []    # [(curso_id, asig_id, prof_id), ...]
+    p1_paired = []    # [(curso_id, asig_id1, prof_id1, asig_id2, prof_id2), ...]
+    p1_unassignable = []
 
-        # Regla tutor_clase_etapa: en esta etapa el tutor imparte esta asig (regla dura)
-        etapa_curso = curso_etapa.get(curso_id)
-        nombre_curso = curso_nombre.get(curso_id, '')
-        tutor_ids_curso = set(prof_tutoria.get(nombre_curso, []))
-        if etapa_curso and asig_id in reglas_tutor_etapa_dura.get(etapa_curso, set()):
-            cands = [p for p in cands if p in tutor_ids_curso]
+    task_count = defaultdict(int)
+    for curso_id, asig_id in tasks:
+        task_count[(curso_id, asig_id)] += 1
 
-        if not cands:
-            return []
+    # Más restringido (menos candidatos) primero
+    sorted_pairs = sorted(task_count.items(),
+                          key=lambda x: len(eligible_for(x[0][0], x[0][1])))
 
-        # Ordenar: preferidos primero, evitados al final
-        pref_c = rp_preferir_curso.get(curso_id, set())
-        evit_c = rp_evitar_curso.get(curso_id, set())
-        pref_a = rp_preferir_asignatura.get(asig_id, set())
-        evit_f = rp_evitar_franja.get(slot, set())
+    for (curso_id, asig_id), count in sorted_pairs:
+        eligible = eligible_for(curso_id, asig_id)
+        fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
+        is_cotutor = len(fij_ca & eligible) > 1
 
-        def sort_key(pid):
-            score = 0
-            if pid in pref_c: score -= 20
-            if pid in pref_a: score -= 15
-            if pid in evit_c: score += 20
-            if pid in evit_f: score += 10
-            # Blanda tutor_clase_etapa: preferir al tutor
-            if etapa_curso and asig_id in reglas_tutor_etapa_blanda.get(etapa_curso, set()):
-                if pid in tutor_ids_curso: score -= 30
-            return score
-
-        random.shuffle(cands)
-        cands.sort(key=sort_key)
-
-        # Tutor a primera hora (blanda, máxima prioridad si aplica)
-        if regla_tutor_primera and franja == primera_franja:
-            tutores_en_cands = [p for p in cands if p in tutor_ids_curso]
-            if tutores_en_cands:
-                cands = tutores_en_cands + [p for p in cands if p not in tutor_ids_curso]
-
-        return cands
-
-    # Paso 1: fijar_franja (reglas duras, primero)
-    fixed_indices = set()
-    for idx, (curso_id, asig_id) in enumerate(tasks):
-        if asig_id not in reglas_fijar:
-            continue
-        dia, franja = reglas_fijar[asig_id]
-        cands = candidatos(curso_id, asig_id, dia, franja)
-        if cands:
-            do_assign(curso_id, asig_id, dia, franja, cands[0])
-            fixed_indices.add(idx)
-
-    # Paso 2: consecutivas
-    remaining = [(i, t) for i, t in enumerate(tasks) if i not in fixed_indices]
-    consec_groups = defaultdict(list)
-    normal_tasks = []
-    for idx, (curso_id, asig_id) in remaining:
-        if asig_id in reglas_consecutivas:
-            consec_groups[(curso_id, asig_id)].append(idx)
+        if is_cotutor:
+            # Cotutores: distribuir slot a slot, siempre el de menor carga
+            for _ in range(count):
+                avail = [p for p in eligible if prof_load[p] < prof_max.get(p, 25)]
+                if not avail:
+                    p1_unassignable.append((curso_id, asig_id))
+                    continue
+                prof = min(avail, key=lambda p: prof_load[p])
+                p1_normal.append((curso_id, asig_id, prof))
+                prof_load[prof] += 1
+        elif regla_unico_prof == 'dura':
+            # Un solo profesor para todos los slots de esta combinación
+            avail = sort_eligible([p for p in eligible if prof_load[p] < prof_max.get(p, 25)],
+                                  curso_id, asig_id, prof_load)
+            if not avail:
+                p1_unassignable.extend([(curso_id, asig_id)] * count)
+                continue
+            prof = avail[0]
+            cap = prof_max.get(prof, 25) - prof_load[prof]
+            n = min(count, cap)
+            for _ in range(n):
+                p1_normal.append((curso_id, asig_id, prof))
+                prof_load[prof] += 1
+            p1_unassignable.extend([(curso_id, asig_id)] * (count - n))
         else:
-            normal_tasks.append((curso_id, asig_id))
+            # Sin regla estricta (blanda o None): mejor candidato primero, overflow al siguiente
+            remaining = count
+            for prof in sort_eligible([p for p in eligible if prof_load[p] < prof_max.get(p, 25)],
+                                      curso_id, asig_id, prof_load):
+                if remaining <= 0:
+                    break
+                cap = prof_max.get(prof, 25) - prof_load[prof]
+                n = min(remaining, cap)
+                for _ in range(n):
+                    p1_normal.append((curso_id, asig_id, prof))
+                    prof_load[prof] += 1
+                remaining -= n
+            p1_unassignable.extend([(curso_id, asig_id)] * remaining)
 
-    for (curso_id, asig_id), indices in consec_groups.items():
-        n = len(indices)
+    # Medias horas emparejadas
+    for curso_id, asig_id1, asig_id2 in paired_tasks:
+        e1 = eligible_for(curso_id, asig_id1)
+        e2 = eligible_for(curso_id, asig_id2)
+        a1 = sort_eligible([p for p in e1 if prof_load[p] < prof_max.get(p, 25)],
+                           curso_id, asig_id1, prof_load)
+        a2 = sort_eligible([p for p in e2 if prof_load[p] < prof_max.get(p, 25)],
+                           curso_id, asig_id2, prof_load)
+        prof1 = a1[0] if a1 else None
+        prof2 = a2[0] if a2 else prof1
+        if prof1:
+            p1_paired.append((curso_id, asig_id1, prof1, asig_id2, prof2))
+            prof_load[prof1] += 1
+            if prof2 and prof2 != prof1:
+                prof_load[prof2] += 1
+        else:
+            p1_unassignable.extend([(curso_id, asig_id1), (curso_id, asig_id2)])
+
+    # ══════════════════════════════════════════════════════════════════════
+    # FASE 2 — Distribución: ¿en qué día y franja?
+    # Dado quién da qué, encuentra slots válidos sin solapamientos.
+    # Las reglas duras de franja (excluir_franja, fijar_franja) se aplican aquí.
+    # ══════════════════════════════════════════════════════════════════════
+
+    slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
+
+    profesor_ocupado = defaultdict(set)
+    curso_ocupado = defaultdict(set)
+    asig_dia_count = defaultdict(int)
+    p2_unassignable = []
+
+    def do_assign2(curso_id, asig_id, prof_id, dia, franja, asig2=None, prof2=None):
+        ha = HorarioAsignacion(
+            curso_id=curso_id, asignatura_id=asig_id,
+            profesor_id=prof_id, dia=dia, franja=franja
+        )
+        if asig2:
+            ha.asignatura2_id = asig2
+            ha.profesor2_id = prof2 if prof2 else prof_id
+        db.session.add(ha)
+        profesor_ocupado[prof_id].add((dia, franja))
+        if prof2 and prof2 != prof_id:
+            profesor_ocupado[prof2].add((dia, franja))
+        curso_ocupado[curso_id].add((dia, franja))
+        asig_dia_count[(curso_id, asig_id, dia)] += 1
+
+    def find_slot(curso_id, asig_id, prof_id, extra_prof=None, prefer_primera=False):
+        """Devuelve (dia, franja) válidos o (None, None)."""
+        max_d = reglas_max_dia.get(asig_id)
+        if asig_id in reglas_fijar:
+            fd, ff = reglas_fijar[asig_id]
+            candidates = [(fd, ff)]
+        else:
+            # Excluir slots duras del profesor
+            excl = {sl for sl in slots_all
+                    if prof_id in rp_excluir_franja.get(sl, set())}
+            if extra_prof:
+                excl |= {sl for sl in slots_all
+                         if extra_prof in rp_excluir_franja.get(sl, set())}
+            base = [sl for sl in slots_all if sl not in excl]
+            # Separar evitados (blandos) del resto
+            non_avoided = [sl for sl in base
+                           if prof_id not in rp_evitar_franja.get(sl, set())]
+            avoided = [sl for sl in base
+                       if prof_id in rp_evitar_franja.get(sl, set())]
+            random.shuffle(non_avoided)
+            random.shuffle(avoided)
+            if prefer_primera and primera_franja:
+                first = [sl for sl in non_avoided if sl[1] == primera_franja]
+                rest = [sl for sl in non_avoided if sl[1] != primera_franja]
+                non_avoided = first + rest
+            candidates = non_avoided + avoided
+
+        for dia, franja in candidates:
+            slot = (dia, franja)
+            if slot in curso_ocupado[curso_id]:
+                continue
+            if slot in profesor_ocupado[prof_id]:
+                continue
+            if extra_prof and extra_prof != prof_id and slot in profesor_ocupado[extra_prof]:
+                continue
+            if max_d and asig_dia_count[(curso_id, asig_id, dia)] >= max_d:
+                continue
+            return dia, franja
+        return None, None
+
+    # Mapa tutor → cursos donde es tutor (para regla tutor_primera)
+    tutor_cursos = defaultdict(set)
+    for cname, pids in prof_tutoria.items():
+        for cid, cn in curso_nombre.items():
+            if cn == cname:
+                for pid in pids:
+                    tutor_cursos[pid].add(cid)
+
+    # 2a. fijar_franja primero (slot absoluto)
+    fijar_items = [(c, a, p) for c, a, p in p1_normal if a in reglas_fijar]
+    other_items = [(c, a, p) for c, a, p in p1_normal if a not in reglas_fijar]
+
+    for curso_id, asig_id, prof_id in fijar_items:
+        fd, ff = reglas_fijar[asig_id]
+        slot = (fd, ff)
+        if slot not in curso_ocupado[curso_id] and slot not in profesor_ocupado[prof_id]:
+            do_assign2(curso_id, asig_id, prof_id, fd, ff)
+        else:
+            p2_unassignable.append((curso_id, asig_id))
+
+    # 2b. consecutivas (N slots seguidos del mismo prof el mismo día)
+    consec_items = [(c, a, p) for c, a, p in other_items if a in reglas_consecutivas]
+    normal_items = [(c, a, p) for c, a, p in other_items if a not in reglas_consecutivas]
+
+    cgroups = defaultdict(list)
+    for item in consec_items:
+        c, a, p = item
+        cgroups[(c, a, p)].append(item)
+
+    for (curso_id, asig_id, prof_id), group in cgroups.items():
+        n = len(group)
         colocados = 0
+        max_d = reglas_max_dia.get(asig_id)
         dias_s = DIAS_SEMANA[:]
         random.shuffle(dias_s)
         for dia in dias_s:
@@ -1788,123 +1854,47 @@ def generar_horario_automatico():
                 break
             for start in range(len(franjas_clase) - n + 1):
                 seq = [(dia, franjas_clase[start + k]) for k in range(n)]
-                if any(s in curso_ocupado[curso_id] for s in seq):
+                if any(s in curso_ocupado[curso_id] or s in profesor_ocupado[prof_id]
+                       for s in seq):
                     continue
-                max_d = reglas_max_dia.get(asig_id)
+                if any(prof_id in rp_excluir_franja.get(s, set()) for s in seq):
+                    continue
                 if max_d and asig_dia_count[(curso_id, asig_id, dia)] + n > max_d:
                     continue
-                common = [pid for pid in prof_por_asig.get(asig_id, [])
-                          if etapa_compatible(pid, asig_id)
-                          and all(s not in profesor_ocupado[pid] for s in seq)
-                          and profesor_horas[pid] + n <= prof_max.get(pid, 25)
-                          and pid not in rp_excluir_curso.get(curso_id, set())
-                          and all(pid not in rp_excluir_franja.get(s, set()) for s in seq)]
-                fij_c = rp_fijar_curso.get(curso_id, set())
-                if fij_c:
-                    common = [p for p in common if p in fij_c]
-                fij_a = rp_fijar_asignatura.get(asig_id, set())
-                if fij_a:
-                    common = [p for p in common if p in fij_a]
-                fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
-                if fij_ca:
-                    common = [p for p in common if p in fij_ca]
-                if not common:
-                    continue
-                random.shuffle(common)
-                prof_id = common[0]
-                for dia_s, franja_s in seq:
-                    do_assign(curso_id, asig_id, dia_s, franja_s, prof_id)
+                for ds, fs in seq:
+                    do_assign2(curso_id, asig_id, prof_id, ds, fs)
                 colocados += n
                 break
-        for _ in range(n - colocados):
-            sin_asignar.append((curso_id, asig_id))
+        p2_unassignable.extend([(curso_id, asig_id)] * (n - colocados))
 
-    # Paso 3: tareas normales — primero las fijadas (curso+asignatura), luego round-robin
-    slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
-
-    # Separar tareas fijadas (prof_fijar_curso_asignatura) de las libres.
-    # Las fijadas se procesan globalmente primero, porque sus profesores tienen
-    # un presupuesto de horas reservado para esos slots y no deben consumirlo
-    # en otras clases.
-    fixed_tasks_list = []
-    free_tasks_list = []
-    for curso_id, asig_id in normal_tasks:
-        if rp_fijar_curso_asig.get((curso_id, asig_id)):
-            fixed_tasks_list.append((curso_id, asig_id))
+    # 2c. Slots normales (aleatorio + reintentar los que fallen)
+    random.shuffle(normal_items)
+    retry = []
+    for curso_id, asig_id, prof_id in normal_items:
+        prefer = regla_tutor_primera and curso_id in tutor_cursos.get(prof_id, set())
+        dia, franja = find_slot(curso_id, asig_id, prof_id, prefer_primera=prefer)
+        if dia:
+            do_assign2(curso_id, asig_id, prof_id, dia, franja)
         else:
-            free_tasks_list.append((curso_id, asig_id))
+            retry.append((curso_id, asig_id, prof_id))
 
-    # Las fijadas: ordenar por número de profesores disponibles (más restrictivas primero)
-    fixed_tasks_list.sort(key=lambda t: len(rp_fijar_curso_asig.get((t[0], t[1]), set())))
+    for curso_id, asig_id, prof_id in retry:
+        dia, franja = find_slot(curso_id, asig_id, prof_id)
+        if dia:
+            do_assign2(curso_id, asig_id, prof_id, dia, franja)
+        else:
+            p2_unassignable.append((curso_id, asig_id))
 
-    # Las libres: round-robin por curso, más restringidas primero dentro de cada curso
-    tasks_by_course = defaultdict(list)
-    for curso_id, asig_id in free_tasks_list:
-        tasks_by_course[curso_id].append((curso_id, asig_id))
-    for cid in tasks_by_course:
-        tasks_by_course[cid].sort(key=lambda t: len(prof_por_asig.get(t[1], [])))
-    curso_queues = list(tasks_by_course.values())
-    free_ordered = []
-    while any(q for q in curso_queues):
-        for q in curso_queues:
-            if q:
-                free_ordered.append(q.pop(0))
-
-    ordered_tasks = fixed_tasks_list + free_ordered
-
-    pending_retry = []
-    for curso_id, asig_id in ordered_tasks:
-        slots_s = slots_all[:]
-        random.shuffle(slots_s)
-        asignado = False
-        for dia, franja in slots_s:
-            cands = candidatos(curso_id, asig_id, dia, franja)
-            if cands:
-                do_assign(curso_id, asig_id, dia, franja, cands[0])
-                asignado = True
-                break
-        if not asignado:
-            pending_retry.append((curso_id, asig_id))
-
-    # Segundo intento: mismas reglas, sin relajación — evita romper restricciones
-    for curso_id, asig_id in pending_retry:
-        slots_s = slots_all[:]
-        random.shuffle(slots_s)
-        asignado = False
-        for dia, franja in slots_s:
-            cands = candidatos(curso_id, asig_id, dia, franja)
-            if cands:
-                do_assign(curso_id, asig_id, dia, franja, cands[0])
-                asignado = True
-                break
-        if not asignado:
-            sin_asignar.append((curso_id, asig_id))
-
-    # Paso 4: medias horas emparejadas
-    for curso_id, asig_id1, asig_id2 in paired_tasks:
-        slots_s = slots_all[:]
-        random.shuffle(slots_s)
-        asignado = False
-        for dia, franja in slots_s:
-            c1 = candidatos(curso_id, asig_id1, dia, franja)
-            c2 = candidatos(curso_id, asig_id2, dia, franja)
-            # Si una asignatura no tiene profesor propio, usar el de la otra
-            if c1 and not c2:
-                c2 = c1
-            elif c2 and not c1:
-                c1 = c2
-            if c1 and c2:
-                prof1 = c1[0]
-                prof2 = prof1 if prof1 in c2 else c2[0]
-                do_assign_paired(curso_id, asig_id1, asig_id2, prof1, prof2, dia, franja)
-                asignado = True
-                break
-        if not asignado:
-            sin_asignar.append((curso_id, asig_id1))
-            sin_asignar.append((curso_id, asig_id2))
+    # 2d. Medias horas emparejadas
+    for curso_id, asig_id1, prof_id1, asig_id2, prof_id2 in p1_paired:
+        dia, franja = find_slot(curso_id, asig_id1, prof_id1, extra_prof=prof_id2)
+        if dia:
+            do_assign2(curso_id, asig_id1, prof_id1, dia, franja, asig_id2, prof_id2)
+        else:
+            p2_unassignable.extend([(curso_id, asig_id1), (curso_id, asig_id2)])
 
     db.session.commit()
-    return sin_asignar
+    return p1_unassignable + p2_unassignable
 
 
 # ─── CONSTRUCTOR DE HORARIOS ───
