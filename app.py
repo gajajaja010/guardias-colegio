@@ -8,6 +8,7 @@ import os
 import json
 import io
 import openpyxl
+import threading
 from collections import defaultdict
 
 app = Flask(__name__)
@@ -1496,6 +1497,18 @@ def importar_datos_iniciales():
 
 # ───────────────────────────── INIT DB ─────────────────────────────
 
+# Estado compartido para generación en background
+_gen_estado = {
+    'activo': False,
+    'intentos': 0,
+    'mejor_fallos': None,
+    'error': None,
+    'avisos': [],
+    'listo': False,
+}
+_gen_lock = threading.Lock()
+
+
 def generar_horario_automatico():
     import random
 
@@ -1883,18 +1896,20 @@ def generar_horario_automatico():
 
         return asignados, fallos
 
-    # Bucle de reintentos: guarda el mejor resultado y para si es perfecto
-    MAX_INTENTOS = 5000
+    # Bucle sin límite: repite hasta encontrar solución perfecta
     best_assignments = []
     best_fallos = float('inf')
+    intentos = 0
 
-    for _ in range(MAX_INTENTOS):
+    while best_fallos > 0:
         asignados, fallos = _run_fase2()
+        intentos += 1
         if fallos < best_fallos:
             best_fallos = fallos
             best_assignments = asignados
-        if best_fallos == 0:
-            break
+            with _gen_lock:
+                _gen_estado['intentos'] = intentos
+                _gen_estado['mejor_fallos'] = best_fallos
 
     # Escribir el mejor resultado a la base de datos
     for curso_id, asig_id, prof_id, dia, franja, asig2, prof2 in best_assignments:
@@ -1923,6 +1938,10 @@ def horarios_construccion():
     curso_id = request.args.get('curso_id', type=int)
     vista = request.args.get('vista', 'clase')  # 'clase' o 'profesor'
     prof_id = request.args.get('prof_id', type=int)
+    if request.args.get('ok'):
+        flash('Horario generado correctamente.', 'success')
+    elif request.args.get('aviso'):
+        flash('Horario generado con advertencias — ' + request.args.get('aviso'), 'warning')
 
     asignaturas = Asignatura.query.order_by(Asignatura.nombre).all()
     # Pre-agrupar por etapa en Python para evitar problemas con None en Jinja2 groupby
@@ -2117,32 +2136,64 @@ def guardar_especialidades_hc(prof_id):
     return redirect(url_for('horarios_construccion', tab='profesores'))
 
 
+def _worker_generar():
+    with app.app_context():
+        try:
+            sin_asignar_p1, fallos_p2 = generar_horario_automatico()
+            _, grupos_sin_hueco = _asignar_grupos_trabajo()
+            avisos = []
+            if sin_asignar_p1:
+                nombres = []
+                for curso_id, asig_id in sin_asignar_p1[:5]:
+                    c = Curso.query.get(curso_id)
+                    a = Asignatura.query.get(asig_id)
+                    if c and a:
+                        nombres.append(f'{a.nombre} ({c.nombre})')
+                if nombres:
+                    avisos.append(f'Sin asignar (fase 1): {", ".join(nombres)}')
+            if grupos_sin_hueco:
+                avisos.append(f'Sin hueco común: {", ".join(grupos_sin_hueco)}')
+            with _gen_lock:
+                _gen_estado['avisos'] = avisos
+                _gen_estado['listo'] = True
+                _gen_estado['activo'] = False
+        except Exception as e:
+            with _gen_lock:
+                _gen_estado['error'] = str(e)
+                _gen_estado['activo'] = False
+                _gen_estado['listo'] = True
+
+
 @app.route('/horarios-construccion/generar', methods=['POST'])
 @login_required
 def generar_horario_hc():
     if not current_user.es_admin:
         return redirect(url_for('dashboard'))
-    sin_asignar_p1, fallos_p2 = generar_horario_automatico()
-    _, grupos_sin_hueco = _asignar_grupos_trabajo()
-    avisos = []
-    if sin_asignar_p1:
-        nombres = []
-        for curso_id, asig_id in sin_asignar_p1[:5]:
-            c = Curso.query.get(curso_id)
-            a = Asignatura.query.get(asig_id)
-            if c and a:
-                nombres.append(f'{a.nombre} ({c.nombre})')
-        if nombres:
-            avisos.append(f'Sin asignar (fase 1): {", ".join(nombres)}')
-    if fallos_p2 > 0:
-        avisos.append(f'Sin franja encontrada: {fallos_p2} slot(s) sin colocar (conflicto de horario)')
-    if grupos_sin_hueco:
-        avisos.append(f'Sin hueco común: {", ".join(grupos_sin_hueco)}')
-    if avisos:
-        flash('Horario generado con advertencias — ' + ' | '.join(avisos), 'warning')
-    else:
-        flash('Horario generado correctamente con grupos de trabajo asignados.', 'success')
-    return redirect(url_for('horarios_construccion', tab='horario'))
+    with _gen_lock:
+        if _gen_estado['activo']:
+            flash('Ya hay una generación en curso, espera.', 'warning')
+            return redirect(url_for('horario_generando'))
+        _gen_estado.update({'activo': True, 'intentos': 0, 'mejor_fallos': None,
+                            'error': None, 'avisos': [], 'listo': False})
+    t = threading.Thread(target=_worker_generar, daemon=True)
+    t.start()
+    return redirect(url_for('horario_generando'))
+
+
+@app.route('/horarios-construccion/generando')
+@login_required
+def horario_generando():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    return render_template('horario_generando.html')
+
+
+@app.route('/horarios-construccion/estado-generacion')
+@login_required
+def estado_generacion():
+    with _gen_lock:
+        estado = dict(_gen_estado)
+    return jsonify(estado)
 
 
 @app.route('/horarios-construccion/asignar', methods=['POST'])
