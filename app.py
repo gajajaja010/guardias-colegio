@@ -2315,6 +2315,40 @@ def estado_generacion():
     return jsonify(estado)
 
 
+@app.route('/horarios-construccion/asignar-profesor', methods=['POST'])
+@login_required
+def asignar_franja_prof_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    profesor_id = int(request.form.get('profesor_id'))
+    dia = request.form.get('dia')
+    franja = request.form.get('franja')
+    curso_id = request.form.get('curso_id', '') or None
+    asignatura_id = request.form.get('asignatura_id', '') or None
+    asignacion_id = request.form.get('asignacion_id', '') or None
+
+    if asignacion_id:
+        ha = HorarioAsignacion.query.get(int(asignacion_id))
+    else:
+        ha = HorarioAsignacion.query.filter_by(profesor_id=profesor_id, dia=dia, franja=franja).first()
+
+    if not curso_id or not asignatura_id:
+        if ha:
+            db.session.delete(ha)
+            db.session.commit()
+    else:
+        if ha:
+            ha.curso_id = int(curso_id)
+            ha.asignatura_id = int(asignatura_id)
+        else:
+            db.session.add(HorarioAsignacion(
+                profesor_id=profesor_id, dia=dia, franja=franja,
+                curso_id=int(curso_id), asignatura_id=int(asignatura_id)
+            ))
+        db.session.commit()
+    return redirect(url_for('horarios_construccion', tab='horario', vista='profesor', prof_id=profesor_id))
+
+
 @app.route('/horarios-construccion/asignar', methods=['POST'])
 @login_required
 def asignar_franja_hc():

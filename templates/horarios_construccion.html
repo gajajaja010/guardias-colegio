@@ -439,6 +439,7 @@
 <div class="card mb-4">
   <div class="card-header bg-white fw-semibold">
     <i class="bi bi-person-circle me-1"></i>Horario de <strong>{{ prof_sel.nombre }}</strong>
+    <span class="text-muted small ms-2 fw-normal">Haz clic en cualquier celda para editar</span>
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">
@@ -459,8 +460,11 @@
               {% for dia in dias %}
               {% set asig = horario_prof_grid.get((dia, franja)) %}
               {% set slot_c = comp_grid.get((dia, franja)) %}
-              <td class="align-middle p-1" style="min-width:120px;
-                {% if not asig and slot_c %}background:#f0f4f8;{% elif not asig %}background:#f8f9fa;{% endif %}">
+              <td class="align-middle p-1" style="min-width:120px; cursor:pointer;
+                {% if not asig and slot_c %}background:#f0f4f8;{% elif not asig %}background:#f8f9fa;{% endif %}"
+                {% if not slot_c %}
+                onclick="abrirEditorProf('{{ dia }}','{{ franja }}','{{ asig.curso_id if asig else '' }}','{{ asig.asignatura_id if asig else '' }}','{{ asig.id if asig else '' }}')"
+                {% endif %}>
                 {% if asig %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
@@ -494,7 +498,7 @@
                   </span>
                 </div>
                 {% else %}
-                <span class="text-muted small">—</span>
+                <span class="text-muted small">— <i class="bi bi-pencil-fill" style="font-size:.65rem;opacity:.4"></i></span>
                 {% endif %}
               </td>
               {% endfor %}
@@ -506,7 +510,60 @@
     </div>
   </div>
 </div>
-{% endif %}
+
+{# ── Modal edición celda profesor ── #}
+<div class="modal fade" id="modalEditorProf" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Editar franja</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('asignar_franja_prof_hc') }}">
+        <div class="modal-body">
+          <input type="hidden" name="profesor_id" value="{{ prof_sel.id }}">
+          <input type="hidden" name="dia" id="editorProfDia">
+          <input type="hidden" name="franja" id="editorProfFranja">
+          <input type="hidden" name="asignacion_id" id="editorProfAsigId">
+          <p class="text-muted small mb-3" id="editorProfLabel"></p>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Curso</label>
+            <select name="curso_id" id="editorProfCurso" class="form-select">
+              <option value="">— Sin asignación —</option>
+              {% for c in cursos %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Asignatura</label>
+            <select name="asignatura_id" id="editorProfAsig" class="form-select">
+              <option value="">— Sin asignación —</option>
+              {% for a in asignaturas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-danger btn-sm me-auto"
+                  onclick="document.getElementById('editorProfCurso').value='';document.getElementById('editorProfAsig').value='';this.closest('form').submit();">
+            <i class="bi bi-trash me-1"></i>Borrar
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+function abrirEditorProf(dia, franja, cursoId, asigId, asignaId) {
+  document.getElementById('editorProfDia').value = dia;
+  document.getElementById('editorProfFranja').value = franja;
+  document.getElementById('editorProfAsigId').value = asignaId;
+  document.getElementById('editorProfLabel').textContent = dia + ' · ' + franja;
+  document.getElementById('editorProfCurso').value = cursoId || '';
+  document.getElementById('editorProfAsig').value = asigId || '';
+  new bootstrap.Modal(document.getElementById('modalEditorProf')).show();
+}
+</script>
 
 {# ── Vista por clase ── #}
 {% else %}
