@@ -1693,112 +1693,136 @@ def generar_horario_automatico():
             return (tier, -remaining)
         return sorted(profs, key=key)
 
-    prof_load = defaultdict(int)
-    prof_etapa_load = defaultdict(lambda: defaultdict(int))  # prof_id -> etapa -> horas asignadas
-    p1_normal = []    # [(curso_id, asig_id, prof_id), ...]
-    p1_paired = []    # [(curso_id, asig_id1, prof_id1, asig_id2, prof_id2), ...]
-    p1_unassignable = []
-
-    def etapa_quota_ok(prof_id, curso_id):
-        """False si añadir una hora en este curso supera la cuota de etapa del profesor."""
-        quotas = rp_horas_etapa.get(prof_id)
-        if not quotas:
-            return True
-        etapa = curso_etapa.get(curso_id)
-        if not etapa or etapa not in quotas:
-            return True
-        return prof_etapa_load[prof_id][etapa] < quotas[etapa]
-
-    def etapa_load_add(prof_id, curso_id):
-        etapa = curso_etapa.get(curso_id)
-        if etapa:
-            prof_etapa_load[prof_id][etapa] += 1
-
     task_count = defaultdict(int)
     for curso_id, asig_id in tasks:
         task_count[(curso_id, asig_id)] += 1
 
-    # Más restringido (menos candidatos) primero
-    sorted_pairs = sorted(task_count.items(),
-                          key=lambda x: len(eligible_for(x[0][0], x[0][1])))
+    # Agrupar por número de candidatos elegibles (para priorizar más restringidos)
+    _elig_cache = {(c, a): len(eligible_for(c, a)) for (c, a) in task_count}
+    _pairs_by_n = defaultdict(list)
+    for (c, a), cnt in task_count.items():
+        _pairs_by_n[_elig_cache[(c, a)]].append(((c, a), cnt))
 
-    for (curso_id, asig_id), count in sorted_pairs:
-        eligible = eligible_for(curso_id, asig_id)
-        fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
-        is_cotutor = len(fij_ca & eligible) > 1
+    def _run_fase1():
+        """Un intento de asignación profesor→clase. Devuelve (normal, paired, unassignable, load, etapa_load, deficit)."""
+        lload = defaultdict(int)                          # prof_id -> horas asignadas
+        letapa = defaultdict(lambda: defaultdict(int))   # prof_id -> etapa -> horas
 
-        def avail_for(profs):
-            return [p for p in profs
-                    if prof_load[p] < prof_max.get(p, 25) and etapa_quota_ok(p, curso_id)]
+        def _quota_ok(pid, cid):
+            quotas = rp_horas_etapa.get(pid)
+            if not quotas:
+                return True
+            etapa = curso_etapa.get(cid)
+            return not etapa or etapa not in quotas or letapa[pid][etapa] < quotas[etapa]
 
-        if is_cotutor:
-            # Cotutores: distribuir slot a slot, siempre el de menor carga
-            for _ in range(count):
-                avail = avail_for(eligible)
+        def _etapa_add(pid, cid):
+            etapa = curso_etapa.get(cid)
+            if etapa:
+                letapa[pid][etapa] += 1
+
+        def _avail(profs, cid):
+            return [p for p in profs if lload[p] < prof_max.get(p, 25) and _quota_ok(p, cid)]
+
+        lnormal = []
+        lpaired = []
+        lunassig = []
+
+        # Mezclar dentro de cada grupo de igual restricción para explorar ordenes distintos
+        shuffled = []
+        for n in sorted(_pairs_by_n):
+            g = list(_pairs_by_n[n])
+            random.shuffle(g)
+            shuffled.extend(g)
+
+        for (curso_id, asig_id), count in shuffled:
+            eligible = eligible_for(curso_id, asig_id)
+            fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
+            is_cotutor = len(fij_ca & eligible) > 1
+
+            if is_cotutor:
+                for _ in range(count):
+                    avail = _avail(eligible, curso_id)
+                    if not avail:
+                        lunassig.append((curso_id, asig_id))
+                        continue
+                    prof = min(avail, key=lambda p: lload[p])
+                    lnormal.append((curso_id, asig_id, prof))
+                    lload[prof] += 1
+                    _etapa_add(prof, curso_id)
+            elif regla_unico_prof == 'dura':
+                avail = sort_eligible(_avail(eligible, curso_id), curso_id, asig_id, lload)
                 if not avail:
-                    p1_unassignable.append((curso_id, asig_id))
+                    lunassig.extend([(curso_id, asig_id)] * count)
                     continue
-                prof = min(avail, key=lambda p: prof_load[p])
-                p1_normal.append((curso_id, asig_id, prof))
-                prof_load[prof] += 1
-                etapa_load_add(prof, curso_id)
-        elif regla_unico_prof == 'dura':
-            # Un solo profesor para todos los slots de esta combinación
-            avail = sort_eligible(avail_for(eligible), curso_id, asig_id, prof_load)
-            if not avail:
-                p1_unassignable.extend([(curso_id, asig_id)] * count)
-                continue
-            prof = avail[0]
-            # Cap total y cap de etapa
-            etapa = curso_etapa.get(curso_id)
-            etapa_restante = (rp_horas_etapa.get(prof, {}).get(etapa, 9999)
-                              - prof_etapa_load[prof].get(etapa, 0)) if etapa else 9999
-            cap = min(prof_max.get(prof, 25) - prof_load[prof], etapa_restante)
-            n = min(count, cap)
-            for _ in range(n):
-                p1_normal.append((curso_id, asig_id, prof))
-                prof_load[prof] += 1
-                etapa_load_add(prof, curso_id)
-            p1_unassignable.extend([(curso_id, asig_id)] * (count - n))
-        else:
-            # Sin regla estricta (blanda o None): mejor candidato primero, overflow al siguiente
-            remaining = count
-            for prof in sort_eligible(avail_for(eligible), curso_id, asig_id, prof_load):
-                if remaining <= 0:
-                    break
+                prof = avail[0]
                 etapa = curso_etapa.get(curso_id)
                 etapa_restante = (rp_horas_etapa.get(prof, {}).get(etapa, 9999)
-                                  - prof_etapa_load[prof].get(etapa, 0)) if etapa else 9999
-                cap = min(prof_max.get(prof, 25) - prof_load[prof], etapa_restante)
-                n = min(remaining, cap)
+                                  - letapa[prof].get(etapa, 0)) if etapa else 9999
+                cap = min(prof_max.get(prof, 25) - lload[prof], etapa_restante)
+                n = min(count, cap)
                 for _ in range(n):
-                    p1_normal.append((curso_id, asig_id, prof))
-                    prof_load[prof] += 1
-                    etapa_load_add(prof, curso_id)
-                remaining -= n
-            p1_unassignable.extend([(curso_id, asig_id)] * remaining)
+                    lnormal.append((curso_id, asig_id, prof))
+                    lload[prof] += 1
+                    _etapa_add(prof, curso_id)
+                lunassig.extend([(curso_id, asig_id)] * (count - n))
+            else:
+                remaining = count
+                for prof in sort_eligible(_avail(eligible, curso_id), curso_id, asig_id, lload):
+                    if remaining <= 0:
+                        break
+                    etapa = curso_etapa.get(curso_id)
+                    etapa_restante = (rp_horas_etapa.get(prof, {}).get(etapa, 9999)
+                                      - letapa[prof].get(etapa, 0)) if etapa else 9999
+                    cap = min(prof_max.get(prof, 25) - lload[prof], etapa_restante)
+                    n = min(remaining, cap)
+                    for _ in range(n):
+                        lnormal.append((curso_id, asig_id, prof))
+                        lload[prof] += 1
+                        _etapa_add(prof, curso_id)
+                    remaining -= n
+                lunassig.extend([(curso_id, asig_id)] * remaining)
 
-    # Medias horas emparejadas
-    for curso_id, asig_id1, asig_id2 in paired_tasks:
-        e1 = eligible_for(curso_id, asig_id1)
-        e2 = eligible_for(curso_id, asig_id2)
-        a1 = sort_eligible([p for p in e1 if prof_load[p] < prof_max.get(p, 25) and etapa_quota_ok(p, curso_id)],
-                           curso_id, asig_id1, prof_load)
-        a2 = sort_eligible([p for p in e2 if prof_load[p] < prof_max.get(p, 25) and etapa_quota_ok(p, curso_id)],
-                           curso_id, asig_id2, prof_load)
-        prof1 = a1[0] if a1 else None
-        prof2 = a2[0] if a2 else prof1
-        if prof1:
-            p1_paired.append((curso_id, asig_id1, prof1, asig_id2, prof2))
-            prof_load[prof1] += 1
-            etapa_load_add(prof1, curso_id)
-            if prof2 and prof2 != prof1:
-                prof_load[prof2] += 1
-                etapa_load_add(prof2, curso_id)
+        for curso_id, asig_id1, asig_id2 in paired_tasks:
+            e1 = eligible_for(curso_id, asig_id1)
+            e2 = eligible_for(curso_id, asig_id2)
+            a1 = sort_eligible(_avail(e1, curso_id), curso_id, asig_id1, lload)
+            a2 = sort_eligible(_avail(e2, curso_id), curso_id, asig_id2, lload)
+            prof1 = a1[0] if a1 else None
+            prof2 = a2[0] if a2 else prof1
+            if prof1:
+                lpaired.append((curso_id, asig_id1, prof1, asig_id2, prof2))
+                lload[prof1] += 1
+                _etapa_add(prof1, curso_id)
+                if prof2 and prof2 != prof1:
+                    lload[prof2] += 1
+                    _etapa_add(prof2, curso_id)
+            else:
+                lunassig.extend([(curso_id, asig_id1), (curso_id, asig_id2)])
+
+        deficit = sum(max(0, prof_max.get(p.id, 0) - lload[p.id]) for p in profesores_activos)
+        return lnormal, lpaired, lunassig, lload, letapa, deficit
+
+    # Reintentar Phase 1 hasta que todos los profesores alcancen su objetivo
+    best_p1 = _run_fase1()
+    best_deficit = best_p1[5]
+    P1_MAX = 500
+    p1_sin_mejora = 0
+    for _ in range(P1_MAX):
+        if best_deficit == 0:
+            break
+        result = _run_fase1()
+        if result[5] < best_deficit:
+            best_deficit = result[5]
+            best_p1 = result
+            p1_sin_mejora = 0
         else:
-            p1_unassignable.extend([(curso_id, asig_id1), (curso_id, asig_id2)])
+            p1_sin_mejora += 1
+            if p1_sin_mejora >= 200:
+                break  # sin progreso: problema estructural en los datos
 
-    # ── Advertencias: profesores que no alcanzaron su objetivo de horas ──
+    p1_normal, p1_paired, p1_unassignable, prof_load, prof_etapa_load, _ = best_p1
+
+    # Advertencias para profesores que no alcanzaron su objetivo
     for p in profesores_activos:
         target = prof_max.get(p.id, 0)
         actual = prof_load[p.id]
