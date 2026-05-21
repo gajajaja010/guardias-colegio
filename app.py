@@ -1672,7 +1672,8 @@ def generar_horario_automatico():
         return profs
 
     def sort_eligible(profs, curso_id, asig_id, load):
-        """Ordena candidatos: tutores/preferidos primero, evitados al final."""
+        """Ordena candidatos: tutores/preferidos primero, evitados al final.
+        Dentro de cada tier, el que más horas le faltan para su objetivo va primero."""
         etapa = curso_etapa.get(curso_id)
         tutores = set(prof_tutoria.get(curso_nombre.get(curso_id, ''), []))
         preferir = rp_preferir_curso.get(curso_id, set()) | rp_preferir_asignatura.get(asig_id, set())
@@ -1687,7 +1688,9 @@ def generar_horario_automatico():
                 tier = 3
             else:
                 tier = 2
-            return (tier, load[p])
+            # Mayor capacidad restante = más urgente = va primero (valor más bajo)
+            remaining = prof_max.get(p, 25) - load[p]
+            return (tier, -remaining)
         return sorted(profs, key=key)
 
     prof_load = defaultdict(int)
@@ -1794,6 +1797,13 @@ def generar_horario_automatico():
                 etapa_load_add(prof2, curso_id)
         else:
             p1_unassignable.extend([(curso_id, asig_id1), (curso_id, asig_id2)])
+
+    # ── Advertencias: profesores que no alcanzaron su objetivo de horas ──
+    for p in profesores_activos:
+        target = prof_max.get(p.id, 0)
+        actual = prof_load[p.id]
+        if target > 0 and actual < target:
+            p1_unassignable.append(('horas_prof', p.id, actual, target))
 
     # ══════════════════════════════════════════════════════════════════════
     # FASE 2 — Distribución: ¿en qué día y franja?
@@ -2215,15 +2225,25 @@ def _worker_generar():
             sin_asignar_p1, fallos_p2, diagnostico = generar_horario_automatico()
             _, grupos_sin_hueco = _asignar_grupos_trabajo()
             avisos = []
-            if sin_asignar_p1:
+            slots_sin_asignar = [x for x in sin_asignar_p1 if x[0] != 'horas_prof']
+            horas_prof_cortas = [x for x in sin_asignar_p1 if x[0] == 'horas_prof']
+            if slots_sin_asignar:
                 nombres = []
-                for curso_id, asig_id in sin_asignar_p1[:5]:
+                for curso_id, asig_id in slots_sin_asignar[:5]:
                     c = Curso.query.get(curso_id)
                     a = Asignatura.query.get(asig_id)
                     if c and a:
                         nombres.append(f'{a.nombre} ({c.nombre})')
                 if nombres:
-                    avisos.append(f'Sin asignar (fase 1): {", ".join(nombres)}')
+                    avisos.append(f'Sin asignar: {", ".join(nombres)}')
+            if horas_prof_cortas:
+                msgs = []
+                for _, pid, actual, target in horas_prof_cortas[:5]:
+                    p = Profesor.query.get(pid)
+                    if p:
+                        msgs.append(f'{p.nombre} ({actual}/{target}h)')
+                if msgs:
+                    avisos.append(f'Horas insuficientes: {", ".join(msgs)}')
             if diagnostico:
                 avisos.append(f'Conflicto de horario (sin franja libre): {", ".join(diagnostico[:5])}')
             if grupos_sin_hueco:
