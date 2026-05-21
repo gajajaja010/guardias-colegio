@@ -1868,19 +1868,28 @@ def generar_horario_automatico():
                     break
             fallos += n - colocados
 
-        # 2c. normales (orden aleatorio)
-        items_s = normal_items[:]
-        random.shuffle(items_s)
-        retry = []
-        for curso_id, asig_id, prof_id in items_s:
+        # 2c. normales — "más restringido primero" con reordenación dinámica
+        def _opciones(curso_id, asig_id, prof_id):
+            """Cuántos slots válidos quedan para este item en el estado actual."""
+            max_d = reglas_max_dia.get(asig_id)
+            cnt = 0
+            for dia, franja in slots_all:
+                sl = (dia, franja)
+                if sl in curso_occ[curso_id]: continue
+                if sl in prof_occ[prof_id]: continue
+                if prof_id in rp_excluir_franja.get(sl, set()): continue
+                if max_d and dia_cnt[(curso_id, asig_id, dia)] >= max_d: continue
+                cnt += 1
+            return cnt
+
+        pendientes = normal_items[:]
+        random.shuffle(pendientes)  # desempate aleatorio
+        while pendientes:
+            # Ordenar por opciones disponibles (menos opciones = más urgente)
+            pendientes.sort(key=lambda x: _opciones(x[0], x[1], x[2]))
+            curso_id, asig_id, prof_id = pendientes.pop(0)
             prefer = regla_tutor_primera and curso_id in tutor_cursos.get(prof_id, set())
             dia, franja = _find(curso_id, asig_id, prof_id, prefer_primera=prefer)
-            if dia:
-                _place(curso_id, asig_id, prof_id, dia, franja)
-            else:
-                retry.append((curso_id, asig_id, prof_id))
-        for curso_id, asig_id, prof_id in retry:
-            dia, franja = _find(curso_id, asig_id, prof_id)
             if dia:
                 _place(curso_id, asig_id, prof_id, dia, franja)
             else:
