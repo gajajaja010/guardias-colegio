@@ -1650,12 +1650,15 @@ def generar_horario_automatico():
 
     def eligible_for(curso_id, asig_id):
         """Profesores elegibles para (curso, asig) tras aplicar todas las reglas duras."""
+        # prof_fijar_curso_asignatura es la regla más específica: override total.
+        # No requiere que el profesor esté en ProfesorAsignatura.
+        fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
+        if fij_ca:
+            return fij_ca - rp_excluir_curso.get(curso_id, set())
+
         profs = {pid for pid in prof_por_asig.get(asig_id, [])
                  if etapa_compatible(pid, asig_id)}
         profs -= rp_excluir_curso.get(curso_id, set())
-        fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
-        if fij_ca:
-            return profs & fij_ca
         fij_a = rp_fijar_asignatura.get(asig_id, set())
         if fij_a:
             profs &= fij_a
