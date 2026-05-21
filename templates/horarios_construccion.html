@@ -462,9 +462,8 @@
               {% set slot_c = comp_grid.get((dia, franja)) %}
               <td class="align-middle p-1" style="min-width:120px; cursor:pointer;
                 {% if not asig and slot_c %}background:#f0f4f8;{% elif not asig %}background:#f8f9fa;{% endif %}"
-                {% if not slot_c %}
-                onclick="abrirEditorProf('{{ dia }}','{{ franja }}','{{ asig.curso_id if asig else '' }}','{{ asig.asignatura_id if asig else '' }}','{{ asig.id if asig else '' }}')"
-                {% endif %}>
+                onclick="abrirEditorProf('{{ dia }}','{{ franja }}','{{ asig.curso_id if asig else '' }}','{{ asig.asignatura_id if asig else '' }}','{{ asig.id if asig else '' }}','{{ slot_c.tipo if slot_c else '' }}','{{ slot_c.id if slot_c else '' }}','{{ slot_c.grupo_id if slot_c and slot_c.grupo_id else '' }}')"
+                >
                 {% if asig %}
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
@@ -519,49 +518,136 @@
         <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Editar franja</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form method="POST" action="{{ url_for('asignar_franja_prof_hc') }}">
-        <div class="modal-body">
+      <div class="modal-body">
+        <p class="text-muted small mb-3" id="editorProfLabel"></p>
+        {# Selector de tipo #}
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Tipo</label>
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-outline-primary ep-tipo" data-tipo="clase" onclick="epSetTipo('clase')"><i class="bi bi-book me-1"></i>Clase</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ep-tipo" data-tipo="grupo" onclick="epSetTipo('grupo')"><i class="bi bi-people-fill me-1"></i>Grupo de trabajo</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ep-tipo" data-tipo="libre" onclick="epSetTipo('libre')"><i class="bi bi-clock me-1"></i>Complementaria</button>
+            <button type="button" class="btn btn-sm btn-outline-danger ep-tipo" data-tipo="" onclick="epSetTipo('')"><i class="bi bi-x-circle me-1"></i>Vacío</button>
+          </div>
+        </div>
+
+        {# Formulario clase #}
+        <form id="epFormClase" method="POST" action="{{ url_for('asignar_franja_prof_hc') }}" class="d-none">
           <input type="hidden" name="profesor_id" value="{{ prof_sel.id }}">
-          <input type="hidden" name="dia" id="editorProfDia">
-          <input type="hidden" name="franja" id="editorProfFranja">
-          <input type="hidden" name="asignacion_id" id="editorProfAsigId">
-          <p class="text-muted small mb-3" id="editorProfLabel"></p>
+          <input type="hidden" name="dia" class="ep-dia">
+          <input type="hidden" name="franja" class="ep-franja">
+          <input type="hidden" name="asignacion_id" id="epClaseAsignaId">
           <div class="mb-3">
-            <label class="form-label fw-semibold">Curso</label>
-            <select name="curso_id" id="editorProfCurso" class="form-select">
-              <option value="">— Sin asignación —</option>
+            <label class="form-label">Curso</label>
+            <select name="curso_id" id="epCurso" class="form-select">
+              <option value="">— Selecciona —</option>
               {% for c in cursos %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
             </select>
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Asignatura</label>
-            <select name="asignatura_id" id="editorProfAsig" class="form-select">
-              <option value="">— Sin asignación —</option>
+          <div class="mb-2">
+            <label class="form-label">Asignatura</label>
+            <select name="asignatura_id" id="epAsig" class="form-select">
+              <option value="">— Selecciona —</option>
               {% for a in asignaturas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}
             </select>
           </div>
+          <div class="d-flex gap-2 justify-content-end mt-3">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+          </div>
+        </form>
+
+        {# Formulario grupo/complementaria #}
+        <form id="epFormComp" method="POST" action="{{ url_for('asignar_slot_comp_hc') }}" class="d-none">
+          <input type="hidden" name="profesor_id" value="{{ prof_sel.id }}">
+          <input type="hidden" name="dia" class="ep-dia">
+          <input type="hidden" name="franja" class="ep-franja">
+          <input type="hidden" name="tipo_slot" id="epTipoSlot">
+          <input type="hidden" name="slot_id" id="epSlotId">
+          <div id="epGrupoDiv" class="mb-2 d-none">
+            <label class="form-label">Grupo de trabajo</label>
+            <select name="grupo_id" id="epGrupo" class="form-select">
+              <option value="">— Selecciona —</option>
+              {% for g in prof_grupos %}<option value="{{ g.id }}">{{ g.nombre }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="d-flex gap-2 justify-content-end mt-3">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+          </div>
+        </form>
+
+        {# Vacío: confirmar borrado #}
+        <div id="epFormVacio" class="d-none">
+          <p class="text-muted small">Se borrará lo que haya en esta celda.</p>
+          <div class="d-flex gap-2 justify-content-end mt-3">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="epBorrar()">Borrar</button>
+          </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-danger btn-sm me-auto"
-                  onclick="document.getElementById('editorProfCurso').value='';document.getElementById('editorProfAsig').value='';this.closest('form').submit();">
-            <i class="bi bi-trash me-1"></i>Borrar
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-          <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
-        </div>
-      </form>
+        <form id="epFormVacioClase" method="POST" action="{{ url_for('asignar_franja_prof_hc') }}" class="d-none">
+          <input type="hidden" name="profesor_id" value="{{ prof_sel.id }}">
+          <input type="hidden" name="dia" class="ep-dia">
+          <input type="hidden" name="franja" class="ep-franja">
+          <input type="hidden" name="asignacion_id" id="epVacioAsignaId">
+          <input type="hidden" name="curso_id" value="">
+          <input type="hidden" name="asignatura_id" value="">
+        </form>
+        <form id="epFormVacioComp" method="POST" action="{{ url_for('asignar_slot_comp_hc') }}" class="d-none">
+          <input type="hidden" name="profesor_id" value="{{ prof_sel.id }}">
+          <input type="hidden" name="dia" class="ep-dia">
+          <input type="hidden" name="franja" class="ep-franja">
+          <input type="hidden" name="tipo_slot" value="">
+          <input type="hidden" name="slot_id" id="epVacioSlotId">
+        </form>
+      </div>
     </div>
   </div>
 </div>
 <script>
-function abrirEditorProf(dia, franja, cursoId, asigId, asignaId) {
-  document.getElementById('editorProfDia').value = dia;
-  document.getElementById('editorProfFranja').value = franja;
-  document.getElementById('editorProfAsigId').value = asignaId;
+var _epTipoActual = '';
+function epSetTipo(t) {
+  _epTipoActual = t;
+  document.querySelectorAll('.ep-tipo').forEach(function(b){
+    b.classList.toggle('active', b.dataset.tipo === t);
+    b.classList.toggle('btn-primary', b.dataset.tipo === t && t === 'clase');
+    b.classList.toggle('btn-outline-primary', b.dataset.tipo !== t && b.dataset.tipo === 'clase');
+    b.classList.toggle('btn-secondary', b.dataset.tipo === t && t !== 'clase' && t !== '');
+    b.classList.toggle('btn-outline-secondary', b.dataset.tipo !== t && (b.dataset.tipo === 'grupo' || b.dataset.tipo === 'libre'));
+    b.classList.toggle('btn-danger', b.dataset.tipo === t && t === '');
+    b.classList.toggle('btn-outline-danger', b.dataset.tipo !== t && b.dataset.tipo === '');
+  });
+  ['epFormClase','epFormComp','epFormVacio'].forEach(function(id){ document.getElementById(id).classList.add('d-none'); });
+  if (t === 'clase') { document.getElementById('epFormClase').classList.remove('d-none'); }
+  else if (t === 'grupo' || t === 'libre') {
+    document.getElementById('epFormComp').classList.remove('d-none');
+    document.getElementById('epTipoSlot').value = t;
+    document.getElementById('epGrupoDiv').classList.toggle('d-none', t !== 'grupo');
+  }
+  else { document.getElementById('epFormVacio').classList.remove('d-none'); }
+}
+function abrirEditorProf(dia, franja, cursoId, asigId, asignaId, tipoSlot, slotId, grupoId) {
+  // rellenar campos comunes
+  document.querySelectorAll('.ep-dia').forEach(function(el){ el.value = dia; });
+  document.querySelectorAll('.ep-franja').forEach(function(el){ el.value = franja; });
   document.getElementById('editorProfLabel').textContent = dia + ' · ' + franja;
-  document.getElementById('editorProfCurso').value = cursoId || '';
-  document.getElementById('editorProfAsig').value = asigId || '';
+  document.getElementById('epClaseAsignaId').value = asignaId || '';
+  document.getElementById('epClaseAsignaId').value = asignaId || '';
+  document.getElementById('epVacioAsignaId').value = asignaId || '';
+  document.getElementById('epVacioSlotId').value = slotId || '';
+  document.getElementById('epSlotId').value = slotId || '';
+  document.getElementById('epCurso').value = cursoId || '';
+  document.getElementById('epAsig').value = asigId || '';
+  document.getElementById('epGrupo').value = grupoId || '';
+  // elegir tipo inicial
+  var tipo = asignaId ? 'clase' : (tipoSlot || '');
+  epSetTipo(tipo);
   new bootstrap.Modal(document.getElementById('modalEditorProf')).show();
+}
+function epBorrar() {
+  var asignaId = document.getElementById('epVacioAsignaId').value;
+  if (asignaId) { document.getElementById('epFormVacioClase').submit(); }
+  else { document.getElementById('epFormVacioComp').submit(); }
 }
 </script>
 

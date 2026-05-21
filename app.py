@@ -2066,6 +2066,7 @@ def horarios_construccion():
     prof_sel = None
     horario_prof_grid = {}
     comp_grid = {}
+    prof_grupos = []
     if tab == 'horario':
         if vista == 'profesor' and profesores_lista:
             prof_sel = Profesor.query.get(prof_id) if prof_id else profesores_lista[0]
@@ -2074,6 +2075,10 @@ def horarios_construccion():
                     horario_prof_grid[(a.dia, a.franja)] = a
                 for s in SlotComplementaria.query.filter_by(profesor_id=prof_sel.id).all():
                     comp_grid[(s.dia, s.franja)] = s
+                prof_grupos = (GrupoTrabajo.query
+                               .join(ProfesorGrupo, ProfesorGrupo.grupo_id == GrupoTrabajo.id)
+                               .filter(ProfesorGrupo.profesor_id == prof_sel.id)
+                               .order_by(GrupoTrabajo.nombre).all())
         elif cursos:
             curso_sel = Curso.query.get(curso_id) if curso_id else cursos[0]
             if curso_sel:
@@ -2125,6 +2130,7 @@ def horarios_construccion():
         prof_etapas_list=prof_etapas_list,
         etapas=ETAPAS, dias=DIAS_SEMANA, franjas=FRANJAS, franjas_clase=franjas_clase,
         sin_profesor=sin_profesor, comp_grid=comp_grid,
+        prof_grupos=prof_grupos,
         reglas=reglas)
 
 
@@ -2344,6 +2350,41 @@ def asignar_franja_prof_hc():
             db.session.add(HorarioAsignacion(
                 profesor_id=profesor_id, dia=dia, franja=franja,
                 curso_id=int(curso_id), asignatura_id=int(asignatura_id)
+            ))
+        db.session.commit()
+    return redirect(url_for('horarios_construccion', tab='horario', vista='profesor', prof_id=profesor_id))
+
+
+@app.route('/horarios-construccion/asignar-slot-comp', methods=['POST'])
+@login_required
+def asignar_slot_comp_hc():
+    """Asigna/edita/borra un SlotComplementaria manualmente (grupo o libre)."""
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    profesor_id = int(request.form.get('profesor_id'))
+    dia = request.form.get('dia')
+    franja = request.form.get('franja')
+    tipo = request.form.get('tipo_slot', '')  # 'grupo' | 'libre' | ''
+    grupo_id = request.form.get('grupo_id', '') or None
+    slot_id = request.form.get('slot_id', '') or None
+
+    existing = (SlotComplementaria.query.get(int(slot_id)) if slot_id
+                else SlotComplementaria.query.filter_by(profesor_id=profesor_id, dia=dia, franja=franja).first())
+
+    if not tipo:
+        if existing:
+            db.session.delete(existing)
+            db.session.commit()
+    else:
+        if existing:
+            existing.tipo = tipo
+            existing.grupo_id = int(grupo_id) if grupo_id else None
+            existing.tipo2 = None
+        else:
+            db.session.add(SlotComplementaria(
+                profesor_id=profesor_id, dia=dia, franja=franja,
+                tipo=tipo,
+                grupo_id=int(grupo_id) if grupo_id else None
             ))
         db.session.commit()
     return redirect(url_for('horarios_construccion', tab='horario', vista='profesor', prof_id=profesor_id))
