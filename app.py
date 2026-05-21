@@ -1884,7 +1884,7 @@ def generar_horario_automatico():
         return asignados, fallos
 
     # Bucle de reintentos: guarda el mejor resultado y para si es perfecto
-    MAX_INTENTOS = 500
+    MAX_INTENTOS = 5000
     best_assignments = []
     best_fallos = float('inf')
 
