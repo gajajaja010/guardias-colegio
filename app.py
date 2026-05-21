@@ -1908,7 +1908,7 @@ def generar_horario_automatico():
         db.session.add(ha)
 
     db.session.commit()
-    return p1_unassignable + [(0, 0)] * best_fallos  # p2 fallos como marcador de cantidad
+    return p1_unassignable, best_fallos
 
 
 # ─── CONSTRUCTOR DE HORARIOS ───
@@ -2122,16 +2122,20 @@ def guardar_especialidades_hc(prof_id):
 def generar_horario_hc():
     if not current_user.es_admin:
         return redirect(url_for('dashboard'))
-    sin_asignar = generar_horario_automatico()
+    sin_asignar_p1, fallos_p2 = generar_horario_automatico()
     _, grupos_sin_hueco = _asignar_grupos_trabajo()
     avisos = []
-    if sin_asignar:
+    if sin_asignar_p1:
         nombres = []
-        for curso_id, asig_id in sin_asignar[:5]:
+        for curso_id, asig_id in sin_asignar_p1[:5]:
             c = Curso.query.get(curso_id)
             a = Asignatura.query.get(asig_id)
-            nombres.append(f'{a.nombre} ({c.nombre})')
-        avisos.append(f'Sin asignar: {", ".join(nombres)}')
+            if c and a:
+                nombres.append(f'{a.nombre} ({c.nombre})')
+        if nombres:
+            avisos.append(f'Sin asignar (fase 1): {", ".join(nombres)}')
+    if fallos_p2 > 0:
+        avisos.append(f'Sin franja encontrada: {fallos_p2} slot(s) sin colocar (conflicto de horario)')
     if grupos_sin_hueco:
         avisos.append(f'Sin hueco común: {", ".join(grupos_sin_hueco)}')
     if avisos:
