@@ -1889,158 +1889,183 @@ def generar_horario_automatico():
     consec_items = [(c, a, p) for c, a, p in other_items if a in reglas_consecutivas]
     normal_items = [(c, a, p) for c, a, p in other_items if a not in reglas_consecutivas]
 
-    def _run_fase2():
-        """Un intento de distribución en franjas. Devuelve (assignments, n_fallos)."""
-        prof_occ  = defaultdict(set)
-        curso_occ = defaultdict(set)
-        # Bloquear slots ya ocupados por celdas manuales
-        for _pid, _slots in manual_slots_prof.items():
-            prof_occ[_pid].update(_slots)
-        for _cid, _slots in manual_slots_curso.items():
-            curso_occ[_cid].update(_slots)
-        dia_cnt   = defaultdict(int)
-        asignados = []   # (curso_id, asig_id, prof_id, dia, franja, asig2, prof2)
-        fallos    = 0
+    def _slots_for(cid, aid, pid, xpid=None):
+        """Slots válidos para un item dado el estado actual."""
+        mx = reglas_max_dia.get(aid)
+        out = []
+        for dia, franja in slots_all:
+            sl = (dia, franja)
+            if sl in c_occ[cid]: continue
+            if sl in p_occ[pid]: continue
+            if xpid and xpid != pid and sl in p_occ[xpid]: continue
+            if pid in rp_excluir_franja.get(sl, ()): continue
+            if xpid and xpid in rp_excluir_franja.get(sl, ()): continue
+            if mx and d_cnt[(cid, aid, dia)] >= mx: continue
+            out.append(sl)
+        return out
 
-        def _find(curso_id, asig_id, prof_id, extra_prof=None, prefer_primera=False):
-            max_d = reglas_max_dia.get(asig_id)
-            if asig_id in reglas_fijar:
-                candidates = [reglas_fijar[asig_id]]
-            else:
-                excl = {sl for sl in slots_all
-                        if prof_id in rp_excluir_franja.get(sl, set())}
-                if extra_prof:
-                    excl |= {sl for sl in slots_all
-                             if extra_prof in rp_excluir_franja.get(sl, set())}
-                base = [sl for sl in slots_all if sl not in excl]
-                non_av = [sl for sl in base
-                          if prof_id not in rp_evitar_franja.get(sl, set())]
-                avoided = [sl for sl in base
-                           if prof_id in rp_evitar_franja.get(sl, set())]
-                random.shuffle(non_av)
-                random.shuffle(avoided)
-                if prefer_primera and primera_franja:
-                    first = [sl for sl in non_av if sl[1] == primera_franja]
-                    rest  = [sl for sl in non_av if sl[1] != primera_franja]
-                    non_av = first + rest
-                candidates = non_av + avoided
+    def _consec_seqs(cid, aid, pid, n):
+        """Secuencias de n franjas consecutivas válidas para un item."""
+        out = []
+        for dia in DIAS_SEMANA:
+            for si in range(len(franjas_clase) - n + 1):
+                seq = [(dia, franjas_clase[si + k]) for k in range(n)]
+                if any(s in c_occ[cid] or s in p_occ[pid] for s in seq): continue
+                if any(pid in rp_excluir_franja.get(s, ()) for s in seq): continue
+                mx = reglas_max_dia.get(aid)
+                if mx and d_cnt[(cid, aid, dia)] + n > mx: continue
+                out.append(seq)
+        return out
 
-            for dia, franja in candidates:
-                slot = (dia, franja)
-                if slot in curso_occ[curso_id]:
-                    continue
-                if slot in prof_occ[prof_id]:
-                    continue
-                if extra_prof and extra_prof != prof_id and slot in prof_occ[extra_prof]:
-                    continue
-                if max_d and dia_cnt[(curso_id, asig_id, dia)] >= max_d:
-                    continue
-                return dia, franja
-            return None, None
+    # Estado mutable compartido por el backtracking
+    p_occ = defaultdict(set)
+    c_occ = defaultdict(set)
+    d_cnt = defaultdict(int)
 
-        def _place(curso_id, asig_id, prof_id, dia, franja, asig2=None, prof2=None):
-            asignados.append((curso_id, asig_id, prof_id, dia, franja, asig2, prof2))
-            prof_occ[prof_id].add((dia, franja))
-            if prof2 and prof2 != prof_id:
-                prof_occ[prof2].add((dia, franja))
-            curso_occ[curso_id].add((dia, franja))
-            dia_cnt[(curso_id, asig_id, dia)] += 1
+    for _pid, _ss in manual_slots_prof.items():
+        p_occ[_pid].update(_ss)
+    for _cid, _ss in manual_slots_curso.items():
+        c_occ[_cid].update(_ss)
 
-        # 2a. fijar_franja (deterministas, mismo resultado siempre)
-        for curso_id, asig_id, prof_id in fijar_items:
-            fd, ff = reglas_fijar[asig_id]
-            slot = (fd, ff)
-            if slot not in curso_occ[curso_id] and slot not in prof_occ[prof_id]:
-                _place(curso_id, asig_id, prof_id, fd, ff)
-            else:
-                fallos += 1
-
-        # 2b. consecutivas
-        cgroups = defaultdict(list)
-        for c, a, p in consec_items:
-            cgroups[(c, a, p)].append((c, a, p))
-        for (curso_id, asig_id, prof_id), group in cgroups.items():
-            n = len(group)
-            colocados = 0
-            max_d = reglas_max_dia.get(asig_id)
-            dias_s = DIAS_SEMANA[:]
-            random.shuffle(dias_s)
-            for dia in dias_s:
-                if colocados >= n:
-                    break
-                for start in range(len(franjas_clase) - n + 1):
-                    seq = [(dia, franjas_clase[start + k]) for k in range(n)]
-                    if any(s in curso_occ[curso_id] or s in prof_occ[prof_id] for s in seq):
-                        continue
-                    if any(prof_id in rp_excluir_franja.get(s, set()) for s in seq):
-                        continue
-                    if max_d and dia_cnt[(curso_id, asig_id, dia)] + n > max_d:
-                        continue
-                    for ds, fs in seq:
-                        _place(curso_id, asig_id, prof_id, ds, fs)
-                    colocados += n
-                    break
-            fallos += n - colocados
-
-        # 2c. normales — "más restringido primero" con reordenación dinámica
-        def _opciones(curso_id, asig_id, prof_id):
-            """Cuántos slots válidos quedan para este item en el estado actual."""
-            max_d = reglas_max_dia.get(asig_id)
-            cnt = 0
-            for dia, franja in slots_all:
-                sl = (dia, franja)
-                if sl in curso_occ[curso_id]: continue
-                if sl in prof_occ[prof_id]: continue
-                if prof_id in rp_excluir_franja.get(sl, set()): continue
-                if max_d and dia_cnt[(curso_id, asig_id, dia)] >= max_d: continue
-                cnt += 1
-            return cnt
-
-        pendientes = normal_items[:]
-        random.shuffle(pendientes)
-        while pendientes:
-            # Más restringido primero; ruido aleatorio como desempate para variar entre intentos
-            pendientes.sort(key=lambda x: (_opciones(x[0], x[1], x[2]), random.random()))
-            curso_id, asig_id, prof_id = pendientes.pop(0)
-            prefer = regla_tutor_primera and curso_id in tutor_cursos.get(prof_id, set())
-            dia, franja = _find(curso_id, asig_id, prof_id, prefer_primera=prefer)
-            if dia:
-                _place(curso_id, asig_id, prof_id, dia, franja)
-            else:
-                fallos += 1
-
-        # 2d. medias horas emparejadas
-        for curso_id, asig_id1, prof_id1, asig_id2, prof_id2 in p1_paired:
-            dia, franja = _find(curso_id, asig_id1, prof_id1, extra_prof=prof_id2)
-            if dia:
-                _place(curso_id, asig_id1, prof_id1, dia, franja, asig_id2, prof_id2)
-            else:
-                fallos += 2
-
-        return asignados, fallos
-
-    # Bucle: para cuando fallos=0 o cuando lleva SIN_MEJORA_MAX intentos sin bajar
-    SIN_MEJORA_MAX = 3000
-    best_assignments = []
-    best_fallos = float('inf')
-    intentos = 0
-    sin_mejora = 0
-
-    while best_fallos > 0 and sin_mejora < SIN_MEJORA_MAX:
-        asignados, fallos = _run_fase2()
-        intentos += 1
-        if fallos < best_fallos:
-            best_fallos = fallos
-            best_assignments = asignados
-            sin_mejora = 0
-            with _gen_lock:
-                _gen_estado['intentos'] = intentos
-                _gen_estado['mejor_fallos'] = best_fallos
+    # Colocar fijar_items de forma determinista (no hay elección)
+    placed_base = []
+    fallos_base = 0
+    for cid, aid, pid in fijar_items:
+        fd, ff = reglas_fijar[aid]
+        sl = (fd, ff)
+        if sl not in c_occ[cid] and sl not in p_occ[pid]:
+            placed_base.append((cid, aid, pid, fd, ff, None, None))
+            p_occ[pid].add(sl); c_occ[cid].add(sl); d_cnt[(cid, aid, fd)] += 1
         else:
-            sin_mejora += 1
-            if intentos % 200 == 0:
-                with _gen_lock:
-                    _gen_estado['intentos'] = intentos
+            fallos_base += 1
+
+    # Construir lista de variables para backtracking
+    # ('n', cid, aid, pid) | ('c', cid, aid, pid, n) | ('p', cid, a1, p1, a2, p2)
+    bt_vars = []
+    cg = defaultdict(int)
+    for c, a, p in consec_items:
+        cg[(c, a, p)] += 1
+    for (c, a, p), n in cg.items():
+        bt_vars.append(('c', c, a, p, n))
+    for c, a, p in normal_items:
+        bt_vars.append(('n', c, a, p))
+    for c, a1, p1, a2, p2 in p1_paired:
+        bt_vars.append(('p', c, a1, p1, a2, p2))
+
+    random.shuffle(bt_vars)
+
+    def _dom_size(item):
+        if item[0] == 'n':
+            return len(_slots_for(item[1], item[2], item[3]))
+        elif item[0] == 'c':
+            return len(_consec_seqs(item[1], item[2], item[3], item[4]))
+        else:
+            return len(_slots_for(item[1], item[2], item[3], item[5]))
+
+    best_bt = {'fallos': len(bt_vars), 'placed': []}
+
+    import time as _time
+    _bt_start = _time.time()
+    BT_TIMEOUT = 280
+
+    def _bt(remaining, placed, fallos):
+        if _time.time() - _bt_start > BT_TIMEOUT:
+            if fallos < best_bt['fallos']:
+                best_bt['fallos'] = fallos
+                best_bt['placed'] = placed[:]
+            return
+        if not remaining:
+            if fallos < best_bt['fallos']:
+                best_bt['fallos'] = fallos
+                best_bt['placed'] = placed[:]
+            return
+        if fallos >= best_bt['fallos']:
+            return  # poda: no puede mejorar el mejor actual
+
+        # MRV: elegir la variable más restringida
+        best_i = min(range(len(remaining)), key=lambda i: _dom_size(remaining[i]))
+        item = remaining[best_i]
+        rest = remaining[:best_i] + remaining[best_i + 1:]
+
+        with _gen_lock:
+            _gen_estado['intentos'] += 1
+            _gen_estado['mejor_fallos'] = best_bt['fallos'] if best_bt['fallos'] < len(bt_vars) else fallos
+
+        if item[0] == 'n':
+            _, cid, aid, pid = item
+            slots = _slots_for(cid, aid, pid)
+            random.shuffle(slots)
+            if not slots:
+                _bt(rest, placed, fallos + 1)
+                return
+            for dia, franja in slots:
+                sl = (dia, franja)
+                p_occ[pid].add(sl); c_occ[cid].add(sl); d_cnt[(cid, aid, dia)] += 1
+                # Forward check: ningún item restante se queda sin opciones
+                if all(_dom_size(r) > 0 for r in rest):
+                    placed.append((cid, aid, pid, dia, franja, None, None))
+                    _bt(rest, placed, fallos)
+                    placed.pop()
+                    if best_bt['fallos'] == 0:
+                        p_occ[pid].discard(sl); c_occ[cid].discard(sl); d_cnt[(cid, aid, dia)] -= 1
+                        return
+                p_occ[pid].discard(sl); c_occ[cid].discard(sl); d_cnt[(cid, aid, dia)] -= 1
+
+        elif item[0] == 'c':
+            _, cid, aid, pid, n = item
+            seqs = _consec_seqs(cid, aid, pid, n)
+            random.shuffle(seqs)
+            if not seqs:
+                _bt(rest, placed, fallos + n)
+                return
+            for seq in seqs:
+                for dia, franja in seq:
+                    p_occ[pid].add((dia, franja)); c_occ[cid].add((dia, franja)); d_cnt[(cid, aid, dia)] += 1
+                if all(_dom_size(r) > 0 for r in rest):
+                    for dia, franja in seq:
+                        placed.append((cid, aid, pid, dia, franja, None, None))
+                    _bt(rest, placed, fallos)
+                    for _ in seq: placed.pop()
+                    if best_bt['fallos'] == 0:
+                        for dia, franja in seq:
+                            p_occ[pid].discard((dia, franja)); c_occ[cid].discard((dia, franja)); d_cnt[(cid, aid, dia)] -= 1
+                        return
+                for dia, franja in seq:
+                    p_occ[pid].discard((dia, franja)); c_occ[cid].discard((dia, franja)); d_cnt[(cid, aid, dia)] -= 1
+
+        else:  # paired
+            _, cid, a1, p1, a2, p2 = item
+            slots = _slots_for(cid, a1, p1, p2)
+            random.shuffle(slots)
+            if not slots:
+                _bt(rest, placed, fallos + 2)
+                return
+            for dia, franja in slots:
+                sl = (dia, franja)
+                p_occ[p1].add(sl)
+                if p2 != p1: p_occ[p2].add(sl)
+                c_occ[cid].add(sl); d_cnt[(cid, a1, dia)] += 1
+                if all(_dom_size(r) > 0 for r in rest):
+                    placed.append((cid, a1, p1, dia, franja, a2, p2))
+                    _bt(rest, placed, fallos)
+                    placed.pop()
+                    if best_bt['fallos'] == 0:
+                        p_occ[p1].discard(sl)
+                        if p2 != p1: p_occ[p2].discard(sl)
+                        c_occ[cid].discard(sl); d_cnt[(cid, a1, dia)] -= 1
+                        return
+                p_occ[p1].discard(sl)
+                if p2 != p1: p_occ[p2].discard(sl)
+                c_occ[cid].discard(sl); d_cnt[(cid, a1, dia)] -= 1
+
+    with _gen_lock:
+        _gen_estado['intentos'] = 0
+        _gen_estado['mejor_fallos'] = len(bt_vars)
+
+    _bt(bt_vars, [], 0)
+
+    best_assignments = placed_base + best_bt['placed']
+    best_fallos = fallos_base + best_bt['fallos']
 
     # Escribir el mejor resultado a la base de datos
     for curso_id, asig_id, prof_id, dia, franja, asig2, prof2 in best_assignments:
