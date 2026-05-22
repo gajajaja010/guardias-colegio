@@ -2582,9 +2582,10 @@ def _asignar_grupos_trabajo():
     db.session.flush()
 
     # Para profesores con fracción de 0.5h libre, marcar un slot de grupo como tipo2='libre'
+    # Nunca tocar slots manuales
     for pid in profs_con_fraccion:
         grupo_slot = SlotComplementaria.query.filter_by(
-            profesor_id=pid, tipo='grupo'
+            profesor_id=pid, tipo='grupo', es_manual=False
         ).filter(SlotComplementaria.tipo2.is_(None)).first()
         if grupo_slot:
             grupo_slot.tipo2 = 'libre'
