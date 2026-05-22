@@ -2483,7 +2483,22 @@ def limpiar_horario_hc():
     HorarioAsignacion.query.delete()
     SlotComplementaria.query.delete()
     db.session.commit()
-    flash('Horario borrado.', 'success')
+    flash('Horario borrado completamente.', 'success')
+    return redirect(url_for('horarios_construccion', tab='horario'))
+
+
+@app.route('/horarios-construccion/limpiar-automaticos', methods=['POST'])
+@login_required
+def limpiar_automaticos_hc():
+    if not current_user.es_admin:
+        return redirect(url_for('dashboard'))
+    HorarioAsignacion.query.filter_by(es_manual=False).delete()
+    try:
+        SlotComplementaria.query.filter_by(es_manual=False).delete()
+    except Exception:
+        pass
+    db.session.commit()
+    flash('Slots automáticos borrados. Los bloqueados (🔒) se han conservado.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario'))
 
 

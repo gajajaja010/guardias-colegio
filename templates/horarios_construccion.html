@@ -349,10 +349,16 @@
           data-bs-toggle="collapse" data-bs-target="#panelIA" aria-expanded="false">
     <i class="bi bi-stars me-1"></i>Generar con IA
   </button>
+  <form method="post" action="{{ url_for('limpiar_automaticos_hc') }}"
+        onsubmit="return confirm('¿Borrar solo los slots automáticos? Los bloqueados (🔒) se conservarán.')">
+    <button type="submit" class="btn btn-outline-warning btn-sm">
+      <i class="bi bi-unlock me-1"></i>Limpiar automáticos
+    </button>
+  </form>
   <form method="post" action="{{ url_for('limpiar_horario_hc') }}"
-        onsubmit="return confirm('¿Borrar todo el horario?')">
+        onsubmit="return confirm('¿Borrar TODO el horario incluyendo los bloqueados?')">
     <button type="submit" class="btn btn-outline-danger btn-sm">
-      <i class="bi bi-trash me-1"></i>Limpiar
+      <i class="bi bi-trash me-1"></i>Limpiar todo
     </button>
   </form>
 
