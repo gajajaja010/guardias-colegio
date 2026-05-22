@@ -161,6 +161,7 @@ class SlotComplementaria(db.Model):
     tipo = db.Column(db.String(20), default='libre')  # 'libre' | 'grupo'
     grupo_id = db.Column(db.Integer, db.ForeignKey('grupo_trabajo.id'), nullable=True)
     tipo2 = db.Column(db.String(20), nullable=True)   # 'libre' when second half is complementaria
+    es_manual = db.Column(db.Boolean, default=False)
     profesor = db.relationship('Profesor', backref='slots_complementaria')
     grupo_rel = db.relationship('GrupoTrabajo')
 
@@ -270,6 +271,7 @@ class HorarioAsignacion(db.Model):
     # Para franjas compartidas (dos medias horas en el mismo slot)
     asignatura2_id = db.Column(db.Integer, db.ForeignKey('asignatura.id'), nullable=True)
     profesor2_id = db.Column(db.Integer, db.ForeignKey('profesor.id'), nullable=True)
+    es_manual = db.Column(db.Boolean, default=False)  # True = puesto a mano, no borrar al regenerar
     __table_args__ = (db.UniqueConstraint('curso_id', 'dia', 'franja'),)
     curso = db.relationship('Curso')
     asignatura = db.relationship('Asignatura', foreign_keys=[asignatura_id], overlaps='asignatura2')
@@ -1512,8 +1514,20 @@ _gen_lock = threading.Lock()
 def generar_horario_automatico():
     import random
 
-    HorarioAsignacion.query.delete()
+    HorarioAsignacion.query.filter_by(es_manual=False).delete()
     db.session.flush()
+
+    # Pre-cargar celdas puestas a mano (no se tocan durante la generación)
+    manual_asigs = HorarioAsignacion.query.filter_by(es_manual=True).all()
+    manual_slots_prof = defaultdict(set)   # prof_id -> {(dia, franja)}
+    manual_slots_curso = defaultdict(set)  # curso_id -> {(dia, franja)}
+    manual_covered = []                    # [(curso_id, asig_id, prof_id), ...]
+    for ma in manual_asigs:
+        manual_slots_prof[ma.profesor_id].add((ma.dia, ma.franja))
+        manual_slots_curso[ma.curso_id].add((ma.dia, ma.franja))
+        manual_covered.append((ma.curso_id, ma.asignatura_id, ma.profesor_id))
+        if ma.profesor2_id:
+            manual_slots_prof[ma.profesor2_id].add((ma.dia, ma.franja))
 
     cursos_map = {c.id: c for c in Curso.query.all()}
     asig_map = {a.id: a for a in Asignatura.query.all()}
@@ -1845,8 +1859,20 @@ def generar_horario_automatico():
                 for pid in pids:
                     tutor_cursos[pid].add(cid)
 
-    fijar_items  = [(c, a, p) for c, a, p in p1_normal if a in reglas_fijar]
-    other_items  = [(c, a, p) for c, a, p in p1_normal if a not in reglas_fijar]
+    # Descontar de p1_normal las tareas ya cubiertas por celdas manuales
+    _mc = defaultdict(int)
+    for _key in manual_covered:
+        _mc[_key] += 1
+    _p1_pendiente = []
+    for item in p1_normal:
+        _key = (item[0], item[1], item[2])
+        if _mc[_key] > 0:
+            _mc[_key] -= 1
+        else:
+            _p1_pendiente.append(item)
+
+    fijar_items  = [(c, a, p) for c, a, p in _p1_pendiente if a in reglas_fijar]
+    other_items  = [(c, a, p) for c, a, p in _p1_pendiente if a not in reglas_fijar]
     consec_items = [(c, a, p) for c, a, p in other_items if a in reglas_consecutivas]
     normal_items = [(c, a, p) for c, a, p in other_items if a not in reglas_consecutivas]
 
@@ -1854,6 +1880,11 @@ def generar_horario_automatico():
         """Un intento de distribución en franjas. Devuelve (assignments, n_fallos)."""
         prof_occ  = defaultdict(set)
         curso_occ = defaultdict(set)
+        # Bloquear slots ya ocupados por celdas manuales
+        for _pid, _slots in manual_slots_prof.items():
+            prof_occ[_pid].update(_slots)
+        for _cid, _slots in manual_slots_curso.items():
+            curso_occ[_cid].update(_slots)
         dia_cnt   = defaultdict(int)
         asignados = []   # (curso_id, asig_id, prof_id, dia, franja, asig2, prof2)
         fallos    = 0
@@ -2346,10 +2377,12 @@ def asignar_franja_prof_hc():
         if ha:
             ha.curso_id = int(curso_id)
             ha.asignatura_id = int(asignatura_id)
+            ha.es_manual = True
         else:
             db.session.add(HorarioAsignacion(
                 profesor_id=profesor_id, dia=dia, franja=franja,
-                curso_id=int(curso_id), asignatura_id=int(asignatura_id)
+                curso_id=int(curso_id), asignatura_id=int(asignatura_id),
+                es_manual=True
             ))
         db.session.commit()
     return redirect(url_for('horarios_construccion', tab='horario', vista='profesor', prof_id=profesor_id))
@@ -2380,11 +2413,13 @@ def asignar_slot_comp_hc():
             existing.tipo = tipo
             existing.grupo_id = int(grupo_id) if grupo_id else None
             existing.tipo2 = None
+            existing.es_manual = True
         else:
             db.session.add(SlotComplementaria(
                 profesor_id=profesor_id, dia=dia, franja=franja,
                 tipo=tipo,
-                grupo_id=int(grupo_id) if grupo_id else None
+                grupo_id=int(grupo_id) if grupo_id else None,
+                es_manual=True
             ))
         db.session.commit()
     return redirect(url_for('horarios_construccion', tab='horario', vista='profesor', prof_id=profesor_id))
@@ -2436,7 +2471,7 @@ def limpiar_horario_hc():
 def _asignar_grupos_trabajo():
     """Asigna slots de grupos de trabajo y complementarias individuales."""
     import random, math
-    SlotComplementaria.query.delete()
+    SlotComplementaria.query.filter_by(es_manual=False).delete()
 
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
     slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
@@ -2447,6 +2482,10 @@ def _asignar_grupos_trabajo():
         prof_ocupado[asig.profesor_id].add((asig.dia, asig.franja))
         if asig.profesor2_id:
             prof_ocupado[asig.profesor2_id].add((asig.dia, asig.franja))
+
+    # Slots manuales de complementaria ya colocados (no se regeneran ni se solapan)
+    for sc in SlotComplementaria.query.filter_by(es_manual=True).all():
+        prof_ocupado[sc.profesor_id].add((sc.dia, sc.franja))
 
     # Slots de grupos ya asignados a cada profesor (para descontar de complementarias)
     prof_slots_grupo = defaultdict(int)
@@ -2830,6 +2869,8 @@ def init_db():
         # Asignaturas que aparecen en HH y LH deben tener etapa NULL
         "UPDATE asignatura SET etapa = NULL WHERE nombre IN ('Inglés','Religión') AND etapa IS NOT NULL",
         'ALTER TABLE slot_complementaria ADD COLUMN tipo2 VARCHAR(20)',
+        'ALTER TABLE horario_asignacion ADD COLUMN es_manual BOOLEAN DEFAULT FALSE',
+        'ALTER TABLE slot_complementaria ADD COLUMN es_manual BOOLEAN DEFAULT FALSE',
     ]
     for sql in migrations:
         try:
