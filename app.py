@@ -2447,11 +2447,13 @@ def asignar_franja_hc():
         if existing:
             existing.asignatura_id = int(asignatura_id)
             existing.profesor_id = int(profesor_id)
+            existing.es_manual = True
         else:
             db.session.add(HorarioAsignacion(
                 curso_id=curso_id, dia=dia, franja=franja,
                 asignatura_id=int(asignatura_id),
-                profesor_id=int(profesor_id)
+                profesor_id=int(profesor_id),
+                es_manual=True
             ))
         db.session.commit()
     return redirect(url_for('horarios_construccion', tab='horario', curso_id=curso_id))
