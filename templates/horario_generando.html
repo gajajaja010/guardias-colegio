@@ -36,8 +36,11 @@
       }
 
       if (data.mejor_fallos !== null) {
+        const fallos = data.mejor_fallos;
         document.getElementById('progreso').textContent =
-          'Intentos: ' + data.intentos + ' — Fallos pendientes: ' + data.mejor_fallos;
+          fallos === 0
+            ? '✓ Solución completa encontrada, guardando…'
+            : 'Explorando… nodos: ' + data.intentos + ' — asignaturas sin hueco: ' + fallos;
       }
 
       if (data.listo) {

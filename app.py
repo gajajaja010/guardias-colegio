@@ -2625,10 +2625,14 @@ def _asignar_grupos_trabajo():
     # Nunca tocar slots manuales
     for pid in profs_con_fraccion:
         grupo_slot = SlotComplementaria.query.filter_by(
-            profesor_id=pid, tipo='grupo', es_manual=False
-        ).filter(SlotComplementaria.tipo2.is_(None)).first()
-        if grupo_slot:
-            grupo_slot.tipo2 = 'libre'
+            profesor_id=pid, tipo='grupo'
+        ).filter(
+            SlotComplementaria.tipo2.is_(None)
+        ).all()
+        for gs in grupo_slot:
+            if not gs.es_manual:   # protección extra a nivel Python
+                gs.tipo2 = 'libre'
+                break
 
     db.session.commit()
     return len(grupos), grupos_sin_hueco
