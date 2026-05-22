@@ -476,7 +476,7 @@
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
                         style="background:#5c6bc0; font-size:.8rem;">
-                    <i class="bi bi-people-fill me-1"></i>{{ slot_c.grupo_rel.nombre }}
+                    <i class="bi bi-people-fill me-1"></i>{{ slot_c.grupo_rel.nombre }}{% if slot_c.es_manual %} <i class="bi bi-lock-fill" style="font-size:.7rem;opacity:.9;"></i>{% endif %}
                   </span>
                   {% if slot_c.tipo2 == 'libre' %}
                   <span class="badge rounded-pill px-2 py-1 w-100"
@@ -493,7 +493,7 @@
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100"
                         style="background:#adb5bd; font-size:.8rem;">
-                    <i class="bi bi-clock me-1"></i>Complementaria
+                    <i class="bi bi-clock me-1"></i>Complementaria{% if slot_c.es_manual %} <i class="bi bi-lock-fill" style="font-size:.7rem;opacity:.9;"></i>{% endif %}
                   </span>
                 </div>
                 {% else %}
