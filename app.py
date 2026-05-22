@@ -2066,7 +2066,8 @@ def generar_horario_automatico():
                 prof_n = next((x.nombre for x in profesores_activos if x.id == p), str(p))
                 diagnostico.append(f'{asig_n} en {curso_n} ({prof_n}): {colocados}/{n}')
 
-    return p1_unassignable, best_fallos, diagnostico
+    n_manuales = len(manual_asigs)
+    return p1_unassignable, best_fallos, diagnostico, n_manuales
 
 
 # ─── CONSTRUCTOR DE HORARIOS ───
@@ -2288,9 +2289,11 @@ def guardar_especialidades_hc(prof_id):
 def _worker_generar():
     with app.app_context():
         try:
-            sin_asignar_p1, fallos_p2, diagnostico = generar_horario_automatico()
+            sin_asignar_p1, fallos_p2, diagnostico, n_manuales = generar_horario_automatico()
             _, grupos_sin_hueco = _asignar_grupos_trabajo()
             avisos = []
+            if n_manuales > 0:
+                avisos.append(f'ℹ️ {n_manuales} celda(s) manual(es) preservada(s)')
             slots_sin_asignar = [x for x in sin_asignar_p1 if x[0] != 'horas_prof']
             horas_prof_cortas = [x for x in sin_asignar_p1 if x[0] == 'horas_prof']
             if slots_sin_asignar:

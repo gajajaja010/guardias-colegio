@@ -468,7 +468,7 @@
                 <div class="d-flex flex-column align-items-center gap-1">
                   <span class="badge rounded-pill px-2 py-1 w-100 text-truncate"
                         style="background:{{ asig.asignatura.color }}; font-size:.8rem;">
-                    {{ asig.asignatura.nombre }}
+                    {{ asig.asignatura.nombre }}{% if asig.es_manual %} <i class="bi bi-lock-fill" style="font-size:.7rem;opacity:.8;"></i>{% endif %}
                   </span>
                   <small class="text-muted" style="font-size:.72rem;">{{ asig.curso.nombre }}</small>
                 </div>
