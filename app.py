@@ -1515,6 +1515,7 @@ def generar_horario_automatico():
     import random
 
     HorarioAsignacion.query.filter_by(es_manual=False).delete()
+    SlotComplementaria.query.filter_by(es_manual=False).delete()
     db.session.flush()
 
     # Pre-cargar celdas puestas a mano (no se tocan durante la generación)
@@ -2465,6 +2466,7 @@ def limpiar_horario_hc():
     if not current_user.es_admin:
         return redirect(url_for('dashboard'))
     HorarioAsignacion.query.delete()
+    SlotComplementaria.query.filter_by(es_manual=False).delete()
     db.session.commit()
     flash('Horario borrado.', 'success')
     return redirect(url_for('horarios_construccion', tab='horario'))
