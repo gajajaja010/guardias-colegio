@@ -1534,6 +1534,14 @@ def generar_horario_automatico():
         if ma.profesor2_id:
             manual_slots_prof[ma.profesor2_id].add((ma.dia, ma.franja))
 
+    # Bloquear también los slots de grupos/complementarias manuales (no colocar clases encima)
+    try:
+        manual_slots_comp = SlotComplementaria.query.filter_by(es_manual=True).all()
+    except Exception:
+        manual_slots_comp = []
+    for sc in manual_slots_comp:
+        manual_slots_prof[sc.profesor_id].add((sc.dia, sc.franja))
+
     cursos_map = {c.id: c for c in Curso.query.all()}
     asig_map = {a.id: a for a in Asignatura.query.all()}
     profesores_activos = Profesor.query.filter_by(activo=True, es_admin=False).all()
