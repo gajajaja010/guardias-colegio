@@ -2396,7 +2396,7 @@ def estado_generacion():
 @app.route('/horarios-construccion/diagnostico')
 @login_required
 def diagnostico_horario():
-    """Simula la Fase 1 y devuelve un diagnóstico detallado."""
+    """Simula la Fase 1 con reglas y devuelve un diagnóstico detallado."""
     if not current_user.es_admin:
         return jsonify({'error': 'Solo administradores'}), 403
 
@@ -2409,16 +2409,32 @@ def diagnostico_horario():
         prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
 
     prof_etapas_d = {p.id: parse_etapas(p.etapa) for p in profesores_activos}
-    prof_names = {p.id: p.nombre for p in profesores_activos}
     asig_map_loc = {a.id: a for a in Asignatura.query.all()}
     curso_etapa_d = {c.id: c.etapa for c in cursos_list}
     curso_nombre_d = {c.id: c.nombre for c in cursos_list}
 
-    # Límite de horas por profesor (igual que generar_horario_automatico)
     prof_max_d = {
         p.id: float(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
         for p in profesores_activos
     }
+
+    # ── Cargar reglas de tutor (igual que en generar_horario_automatico) ──
+    reglas_tutor_etapa_dura = defaultdict(set)   # etapa -> set(asig_id)
+    reglas_tutor_etapa_blanda = defaultdict(set)
+    rp_fijar_curso_asig = defaultdict(set)
+    for r in ReglaHorario.query.all():
+        if r.tipo == 'tutor_clase_etapa' and r.etapa and r.asignatura_id:
+            if r.dureza == 'dura':
+                reglas_tutor_etapa_dura[r.etapa].add(r.asignatura_id)
+            else:
+                reglas_tutor_etapa_blanda[r.etapa].add(r.asignatura_id)
+        elif r.tipo == 'prof_fijar_curso_asignatura' and r.curso_id_regla and r.asignatura_id and r.profesor_id:
+            rp_fijar_curso_asig[(r.curso_id_regla, r.asignatura_id)].add(r.profesor_id)
+
+    prof_tutoria_d = defaultdict(list)
+    for p in profesores_activos:
+        if p.aula_tutoria:
+            prof_tutoria_d[p.aula_tutoria].append(p.id)
 
     def etapa_compat(prof_id, asig_id):
         asig = asig_map_loc.get(asig_id)
@@ -2430,11 +2446,20 @@ def diagnostico_horario():
         return asig.etapa in etapas_p
 
     def elegibles_para(curso_id, asig_id):
-        return [pid for pid in prof_por_asig.get(asig_id, [])
-                if etapa_compat(pid, asig_id)]
+        """Replica eligible_for() del generador, incluyendo reglas de tutor."""
+        fij_ca = rp_fijar_curso_asig.get((curso_id, asig_id), set())
+        if fij_ca:
+            return list(fij_ca)
+        profs = {pid for pid in prof_por_asig.get(asig_id, [])
+                 if etapa_compat(pid, asig_id)}
+        etapa = curso_etapa_d.get(curso_id)
+        if etapa and asig_id in reglas_tutor_etapa_dura.get(etapa, set()):
+            tutores = set(prof_tutoria_d.get(curso_nombre_d.get(curso_id, ''), []))
+            profs &= tutores
+        return list(profs)
 
-    # ── Construir tareas igual que en generar_horario_automatico ──────────
-    tareas = []  # [(curso_id, asig_id, horas)]
+    # ── Construir tareas ──────────────────────────────────────────────────
+    tareas = []
     for ca in CursoAsignatura.query.all():
         curso = next((c for c in cursos_activos if c.id == ca.curso_id), None)
         if not curso:
@@ -2443,20 +2468,28 @@ def diagnostico_horario():
         if h > 0:
             tareas.append((ca.curso_id, ca.asignatura_id, h))
 
-    # ── Simulación greedy de Fase 1 (para diagnóstico) ───────────────────
-    load_sim = defaultdict(float)  # prof_id -> horas asignadas
-    asig_sim = []   # [(curso_id, asig_id, prof_id, horas)]
-    sin_asignar = []  # [(curso_id, asig_id, horas, razon)]
+    # ── Simulación greedy de Fase 1 con reglas ────────────────────────────
+    load_sim = defaultdict(float)
+    asig_sim = []
+    sin_asignar = []
 
-    # Ordenar por número de elegibles (más restringido primero)
     tareas_ord = sorted(tareas, key=lambda t: len(elegibles_para(t[0], t[1])))
 
     for cid, aid, horas in tareas_ord:
         elegibles = elegibles_para(cid, aid)
         if not elegibles:
-            sin_asignar.append((cid, aid, horas, 'Sin profesor asignado a esta asignatura'))
+            razon = 'Sin profesor asignado a esta asignatura'
+            # Detectar si es por regla de tutor sin tutor configurado
+            etapa = curso_etapa_d.get(cid)
+            if etapa and aid in reglas_tutor_etapa_dura.get(etapa, set()):
+                cn = curso_nombre_d.get(cid, '')
+                tutores_curso = prof_tutoria_d.get(cn, [])
+                if not tutores_curso:
+                    razon = f'Regla de tutor dura activa pero {cn} no tiene tutor configurado'
+                else:
+                    razon = f'Regla de tutor dura: tutor(es) de {cn} no tienen esta asignatura'
+            sin_asignar.append((cid, aid, horas, razon))
             continue
-        # Ordenar por capacidad restante (más libre primero)
         elegibles_ord = sorted(elegibles, key=lambda p: load_sim[p] - prof_max_d.get(p, 25))
         asignado = 0.0
         for pid in elegibles_ord:
@@ -2473,38 +2506,26 @@ def diagnostico_horario():
             sin_asignar.append((cid, aid, horas - asignado,
                                 f'Profesores al límite (asignado {asignado:.1f}/{horas:.1f}h)'))
 
-    # ── Construir resultado ───────────────────────────────────────────────
+    # ── Resultado ─────────────────────────────────────────────────────────
     problemas = []
     avisos = []
 
-    # Tareas sin asignar
     if sin_asignar:
         for cid, aid, faltan, razon in sin_asignar:
             cn = curso_nombre_d.get(cid, f'Curso {cid}')
             an = asig_map_loc.get(aid)
             an = an.nombre if an else f'Asig {aid}'
-            problemas.append({
-                'tipo': 'sin_asignar',
-                'texto': f'{an} en {cn}: faltan {faltan:.1f}h — {razon}'
-            })
+            problemas.append({'tipo': 'sin_asignar',
+                               'texto': f'{an} en {cn}: faltan {faltan:.1f}h — {razon}'})
 
-    # Profesores con 0 horas asignadas pero con horas lectivas
-    profs_vacios = []
     for p in profesores_activos:
         if prof_max_d.get(p.id, 0) > 0 and load_sim[p.id] == 0:
-            n_asigs = len(prof_por_asig.get(0, []))  # dummy check
-            total_asigs = sum(1 for _ in ProfesorAsignatura.query.filter_by(profesor_id=p.id))
-            profs_vacios.append({'nombre': p.nombre, 'max': prof_max_d[p.id], 'asigs': total_asigs})
-    if profs_vacios:
-        for pv in profs_vacios:
-            nivel = 'problema' if pv['asigs'] == 0 else 'aviso'
-            msg = f'{pv["nombre"]} (máx {pv["max"]}h) — ' + (
-                'no tiene asignaturas asignadas' if pv['asigs'] == 0
-                else f'sus asignaturas las cubren otros profesores'
-            )
-            (problemas if nivel == 'problema' else avisos).append({'tipo': 'prof_vacio', 'texto': msg})
+            total_asigs = ProfesorAsignatura.query.filter_by(profesor_id=p.id).count()
+            msg = f'{p.nombre} (máx {prof_max_d[p.id]}h) — ' + (
+                'no tiene asignaturas asignadas' if total_asigs == 0
+                else 'sus asignaturas las cubren otros profesores (o regla de tutor)')
+            (problemas if total_asigs == 0 else avisos).append({'tipo': 'prof_vacio', 'texto': msg})
 
-    # Resumen por profesor: horas asignadas vs máximo
     resumen_profs = []
     for p in sorted(profesores_activos, key=lambda x: x.nombre):
         asignadas = round(load_sim[p.id], 1)
@@ -2515,31 +2536,22 @@ def diagnostico_horario():
             'asignadas': asignadas,
             'maximo': maximo,
             'n_asignaturas': n_asigs,
-            'ok': asignadas >= maximo * 0.8 or asignadas == 0
+            'ok': asignadas >= maximo * 0.9
         })
 
-    # Resumen por etapa
     etapa_necesarias = defaultdict(float)
-    etapa_asignadas = defaultdict(float)
-    for cid, aid, pid, h in asig_sim:
-        etapa = curso_etapa_d.get(cid, 'Sin etapa') or 'Sin etapa'
-        etapa_asignadas[etapa] += h
+    etapa_asignadas_d = defaultdict(float)
     for cid, aid, h in tareas:
-        etapa = curso_etapa_d.get(cid, 'Sin etapa') or 'Sin etapa'
-        etapa_necesarias[etapa] += h
-    for cid, aid, faltan, _ in sin_asignar:
-        pass  # ya incluido en etapa_necesarias
+        etapa_necesarias[curso_etapa_d.get(cid, 'Sin etapa') or 'Sin etapa'] += h
+    for cid, aid, pid, h in asig_sim:
+        etapa_asignadas_d[curso_etapa_d.get(cid, 'Sin etapa') or 'Sin etapa'] += h
 
     resumen_etapas = []
     for etapa in sorted(etapa_necesarias):
         nec = round(etapa_necesarias[etapa], 1)
-        asig = round(etapa_asignadas.get(etapa, 0), 1)
-        resumen_etapas.append({
-            'etapa': etapa,
-            'necesarias': nec,
-            'asignadas': asig,
-            'ok': asig >= nec - 0.1
-        })
+        asig = round(etapa_asignadas_d.get(etapa, 0), 1)
+        resumen_etapas.append({'etapa': etapa, 'necesarias': nec, 'asignadas': asig,
+                                'ok': asig >= nec - 0.1})
 
     return jsonify({
         'problemas': problemas,
