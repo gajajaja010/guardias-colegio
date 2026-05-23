@@ -2583,56 +2583,73 @@ def _asignar_grupos_trabajo():
             n_slots = math.ceil(m.horas_semanales)
             tiene_fraccion = (m.horas_semanales % 1) >= 0.5
             for i, (dia, franja) in enumerate(shared_slots[:n_slots]):
-                # El último slot de un miembro con fracción se marca como media hora
                 es_ultimo = (i == n_slots - 1)
                 tipo2 = 'media' if (es_ultimo and tiene_fraccion) else None
-                db.session.add(SlotComplementaria(
+                sc = SlotComplementaria(
                     profesor_id=pid, dia=dia, franja=franja,
                     tipo='grupo', grupo_id=grupo.id, tipo2=tipo2
-                ))
+                )
+                db.session.add(sc)
                 prof_slots_grupo[pid] += 1
 
-    # Slots de complementaria libre individual (int = floor, para respetar 2.5 → 2 slots)
-    # La fracción de 0.5 se combina con un slot de grupo existente (tipo2='libre')
-    profs_con_fraccion = []
-    for prof in Profesor.query.filter_by(activo=True, de_baja=False, es_admin=False).all():
-        horas = prof.horas_libres or 0
-        n_libre = int(horas)
-        fraccion = horas - n_libre  # 0.0 o 0.5
-        if fraccion >= 0.5:
-            profs_con_fraccion.append(prof.id)
-        if n_libre <= 0:
-            continue
-        slots_s = slots_all[:]
-        random.shuffle(slots_s)
-        colocados = 0
-        for dia, franja in slots_s:
-            if colocados >= n_libre:
-                break
-            slot = (dia, franja)
-            if slot not in prof_ocupado[prof.id]:
-                db.session.add(SlotComplementaria(
-                    profesor_id=prof.id, dia=dia, franja=franja,
-                    tipo='libre'
-                ))
-                prof_ocupado[prof.id].add(slot)
-                colocados += 1
-
-    # Flush para que los slots de grupo estén disponibles en la sesión
+    # Flush para que los slots de grupo estén disponibles
     db.session.flush()
 
-    # Para profesores con fracción de 0.5h libre, marcar un slot de grupo como tipo2='libre'
-    # Nunca tocar slots manuales
-    for pid in profs_con_fraccion:
-        grupo_slot = SlotComplementaria.query.filter_by(
-            profesor_id=pid, tipo='grupo'
-        ).filter(
-            SlotComplementaria.tipo2.is_(None)
-        ).all()
-        for gs in grupo_slot:
-            if not gs.es_manual:   # protección extra a nivel Python
-                gs.tipo2 = 'libre'
+    # ── Parear fracciones de media hora ──────────────────────────────────────
+    # Regla: ningún slot puede quedar ocupado solo por media hora.
+    # Si un slot de grupo es tipo2='media' (½ grupo) necesita pareja de ½ libre.
+    # Si hay fracción de horas_libres también, se combinan en un solo slot.
+
+    # 1. Recoger qué profes tienen fracción de grupo (slot tipo2='media')
+    prof_grupo_media = {}   # pid -> SlotComplementaria (el slot 'media')
+    for sc in SlotComplementaria.query.filter_by(tipo='grupo', tipo2='media').all():
+        if not sc.es_manual:
+            prof_grupo_media[sc.profesor_id] = sc
+
+    # 2. Recoger fracción de horas libres por profesor
+    prof_libre_fraccion = set()
+    for prof in Profesor.query.filter_by(activo=True, de_baja=False, es_admin=False).all():
+        horas = prof.horas_libres or 0
+        fraccion = horas - int(horas)
+        if fraccion >= 0.5:
+            prof_libre_fraccion.add(prof.id)
+
+    # 3. Parear: fracción grupo + fracción libre → un solo slot tipo2='libre'
+    prof_libre_ya_pareado = set()
+    for pid in list(prof_grupo_media.keys()):
+        if pid in prof_libre_fraccion:
+            prof_grupo_media[pid].tipo2 = 'libre'   # ½ grupo + ½ libre
+            prof_libre_ya_pareado.add(pid)
+            del prof_grupo_media[pid]
+
+    # 4. Fracción grupo sin pareja libre → convertir a 'libre' igualmente
+    #    (la mitad vacía se trata como complementaria libre)
+    for pid, sc in prof_grupo_media.items():
+        sc.tipo2 = 'libre'
+
+    # 5. Fracción libre sin slot de grupo → buscar cualquier slot de grupo o crear ½ libre
+    for pid in prof_libre_fraccion:
+        if pid in prof_libre_ya_pareado:
+            continue
+        # Intentar pegar la ½ libre a un slot de grupo completo (tipo2=None)
+        candidato = None
+        for gs in SlotComplementaria.query.filter_by(profesor_id=pid, tipo='grupo').all():
+            if not gs.es_manual and gs.tipo2 is None:
+                candidato = gs
                 break
+        if candidato:
+            candidato.tipo2 = 'libre'
+        else:
+            # Crear un slot ½ libre independiente si hay hueco
+            for dia, franja in slots_all:
+                sl = (dia, franja)
+                if sl not in prof_ocupado[pid]:
+                    db.session.add(SlotComplementaria(
+                        profesor_id=pid, dia=dia, franja=franja,
+                        tipo='libre', tipo2='media'   # ½ libre solo
+                    ))
+                    prof_ocupado[pid].add(sl)
+                    break
 
     db.session.commit()
     return len(grupos), grupos_sin_hueco

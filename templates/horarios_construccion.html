@@ -497,10 +497,18 @@
                 </div>
                 {% elif slot_c and slot_c.tipo == 'libre' %}
                 <div class="d-flex flex-column align-items-center gap-1">
+                  {% if slot_c.tipo2 == 'media' %}
+                  <span class="badge rounded-pill px-2 py-1 w-100"
+                        style="background:#adb5bd; font-size:.8rem;">
+                    <i class="bi bi-clock me-1"></i>½ Compl.{% if slot_c.es_manual %} <i class="bi bi-lock-fill" style="font-size:.7rem;opacity:.9;"></i>{% endif %}
+                  </span>
+                  <small class="text-muted" style="font-size:.72rem;">+ ½ pendiente</small>
+                  {% else %}
                   <span class="badge rounded-pill px-2 py-1 w-100"
                         style="background:#adb5bd; font-size:.8rem;">
                     <i class="bi bi-clock me-1"></i>Complementaria{% if slot_c.es_manual %} <i class="bi bi-lock-fill" style="font-size:.7rem;opacity:.9;"></i>{% endif %}
                   </span>
+                  {% endif %}
                 </div>
                 {% else %}
                 <span class="text-muted small">— <i class="bi bi-pencil-fill" style="font-size:.65rem;opacity:.4"></i></span>
