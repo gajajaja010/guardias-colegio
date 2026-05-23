@@ -1954,13 +1954,24 @@ def generar_horario_automatico():
 
     random.shuffle(bt_vars)
 
-    def _dom_size(item):
+    # Pre-calcular cuántos items le quedan por colocar a cada profesor
+    # (se recalcula dinámicamente dentro del backtracking)
+    def _dom_size(item, remaining_list=None):
+        """MRV con slack: min(slots_válidos - items_pendientes_prof + 1).
+        Así un profesor con 21 items en 25 slots (slack=4) se procesa
+        antes que uno con 3 items en 25 slots (slack=22)."""
         if item[0] == 'n':
-            return len(_slots_for(item[1], item[2], item[3]))
+            slots = len(_slots_for(item[1], item[2], item[3]))
+            if remaining_list is not None:
+                pending = sum(1 for r in remaining_list
+                              if r[0] == 'n' and r[3] == item[3])
+                return slots - pending + 1  # slack
+            return slots
         elif item[0] == 'c':
             return len(_consec_seqs(item[1], item[2], item[3], item[4]))
         else:
-            return len(_slots_for(item[1], item[2], item[3], item[5]))
+            slots = len(_slots_for(item[1], item[2], item[3], item[5]))
+            return slots
 
     best_bt = {'fallos': len(bt_vars), 'placed': []}
 
@@ -1982,8 +1993,8 @@ def generar_horario_automatico():
         if fallos >= best_bt['fallos']:
             return  # poda: no puede mejorar el mejor actual
 
-        # MRV: elegir la variable más restringida
-        best_i = min(range(len(remaining)), key=lambda i: _dom_size(remaining[i]))
+        # MRV con slack: elegir la variable más restringida (menor slack)
+        best_i = min(range(len(remaining)), key=lambda i: _dom_size(remaining[i], remaining))
         item = remaining[best_i]
         rest = remaining[:best_i] + remaining[best_i + 1:]
 
