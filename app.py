@@ -1669,7 +1669,7 @@ def generar_horario_automatico():
     primera_franja = franjas_clase[0] if franjas_clase else None
 
     prof_max = {
-        p.id: int(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
+        p.id: float(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
         for p in profesores_activos
     }
     for pid, mx in rp_max_horas.items():
@@ -2416,7 +2416,7 @@ def diagnostico_horario():
 
     # Límite de horas por profesor (igual que generar_horario_automatico)
     prof_max_d = {
-        p.id: int(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
+        p.id: float(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
         for p in profesores_activos
     }
 
