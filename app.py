@@ -2018,7 +2018,19 @@ def generar_horario_automatico():
                 if not slots:
                     fallos_local += 1
                     continue
-                dia, franja = random.choice(slots)
+                # LCV: preferir el día donde el profesor tenga menos clases ya
+                # asignadas (esparcir la carga del profesor por la semana)
+                p_day = defaultdict(int)
+                for d2, _ in local_p_occ.get(pid, set()):
+                    p_day[d2] += 1
+                c_day = defaultdict(int)
+                for d2, _ in local_c_occ.get(cid, set()):
+                    c_day[d2] += 1
+                slots.sort(key=lambda s: p_day[s[0]] + 0.5 * c_day[s[0]])
+                # Entre los slots con mejor score, elegir al azar
+                best_score = p_day[slots[0][0]] + 0.5 * c_day[slots[0][0]]
+                candidates = [s for s in slots if p_day[s[0]] + 0.5 * c_day[s[0]] <= best_score + 0.5]
+                dia, franja = random.choice(candidates)
                 local_p_occ.setdefault(pid, set()).add((dia, franja))
                 local_c_occ.setdefault(cid, set()).add((dia, franja))
                 local_d_cnt[(cid, aid, dia)] += 1
@@ -2053,7 +2065,15 @@ def generar_horario_automatico():
                 if not slots:
                     fallos_local += 2
                     continue
-                dia, franja = random.choice(slots)
+                # Preferir días menos cargados para los dos profesores
+                p1_day = defaultdict(int)
+                for d2, _ in local_p_occ.get(p1, set()):
+                    p1_day[d2] += 1
+                p2_day = defaultdict(int)
+                for d2, _ in local_p_occ.get(p2, set()):
+                    p2_day[d2] += 1
+                slots.sort(key=lambda s: p1_day[s[0]] + p2_day[s[0]])
+                dia, franja = slots[0]
                 local_p_occ.setdefault(p1, set()).add((dia, franja))
                 if p2 != p1: local_p_occ.setdefault(p2, set()).add((dia, franja))
                 local_c_occ.setdefault(cid, set()).add((dia, franja))
