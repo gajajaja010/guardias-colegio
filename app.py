@@ -1786,7 +1786,7 @@ def generar_horario_automatico():
                 etapa_restante = (rp_horas_etapa.get(prof, {}).get(etapa, 9999)
                                   - letapa[prof].get(etapa, 0)) if etapa else 9999
                 cap = min(prof_max.get(prof, 25) - lload[prof], etapa_restante)
-                n = min(count, cap)
+                n = int(min(count, cap))
                 for _ in range(n):
                     lnormal.append((curso_id, asig_id, prof))
                     lload[prof] += 1
@@ -1801,7 +1801,7 @@ def generar_horario_automatico():
                     etapa_restante = (rp_horas_etapa.get(prof, {}).get(etapa, 9999)
                                       - letapa[prof].get(etapa, 0)) if etapa else 9999
                     cap = min(prof_max.get(prof, 25) - lload[prof], etapa_restante)
-                    n = min(remaining, cap)
+                    n = int(min(remaining, cap))
                     for _ in range(n):
                         lnormal.append((curso_id, asig_id, prof))
                         lload[prof] += 1
