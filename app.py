@@ -2396,120 +2396,156 @@ def estado_generacion():
 @app.route('/horarios-construccion/diagnostico')
 @login_required
 def diagnostico_horario():
-    """Analiza los datos y devuelve un JSON con problemas detectados."""
+    """Simula la Fase 1 y devuelve un diagnóstico detallado."""
     if not current_user.es_admin:
         return jsonify({'error': 'Solo administradores'}), 403
 
     profesores_activos = Profesor.query.filter_by(activo=True, de_baja=False, es_admin=False).all()
-    cursos_activos = Curso.query.filter_by(aula_cerrada=False).order_by(Curso.orden, Curso.nombre).all()
+    cursos_list = Curso.query.order_by(Curso.orden, Curso.nombre).all()
+    cursos_activos = [c for c in cursos_list if not c.aula_cerrada]
 
     prof_por_asig = defaultdict(list)
     for pa in ProfesorAsignatura.query.all():
         prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
 
-    prof_etapas = {p.id: parse_etapas(p.etapa) for p in profesores_activos}
+    prof_etapas_d = {p.id: parse_etapas(p.etapa) for p in profesores_activos}
     prof_names = {p.id: p.nombre for p in profesores_activos}
-    curso_etapa_map = {c.id: c.etapa for c in cursos_activos}
     asig_map_loc = {a.id: a for a in Asignatura.query.all()}
+    curso_etapa_d = {c.id: c.etapa for c in cursos_list}
+    curso_nombre_d = {c.id: c.nombre for c in cursos_list}
+
+    # Límite de horas por profesor (igual que generar_horario_automatico)
+    prof_max_d = {
+        p.id: int(p.horas_lectivas) if (p.horas_lectivas or 0) > 0 else (p.horas_max_semanales or 25)
+        for p in profesores_activos
+    }
 
     def etapa_compat(prof_id, asig_id):
         asig = asig_map_loc.get(asig_id)
         if not asig or not asig.etapa:
             return True
-        etapas_p = prof_etapas.get(prof_id, [])
+        etapas_p = prof_etapas_d.get(prof_id, [])
         if not etapas_p:
             return True
         return asig.etapa in etapas_p
 
+    def elegibles_para(curso_id, asig_id):
+        return [pid for pid in prof_por_asig.get(asig_id, [])
+                if etapa_compat(pid, asig_id)]
+
+    # ── Construir tareas igual que en generar_horario_automatico ──────────
+    tareas = []  # [(curso_id, asig_id, horas)]
+    for ca in CursoAsignatura.query.all():
+        curso = next((c for c in cursos_activos if c.id == ca.curso_id), None)
+        if not curso:
+            continue
+        h = ca.horas_semanales or 0
+        if h > 0:
+            tareas.append((ca.curso_id, ca.asignatura_id, h))
+
+    # ── Simulación greedy de Fase 1 (para diagnóstico) ───────────────────
+    load_sim = defaultdict(float)  # prof_id -> horas asignadas
+    asig_sim = []   # [(curso_id, asig_id, prof_id, horas)]
+    sin_asignar = []  # [(curso_id, asig_id, horas, razon)]
+
+    # Ordenar por número de elegibles (más restringido primero)
+    tareas_ord = sorted(tareas, key=lambda t: len(elegibles_para(t[0], t[1])))
+
+    for cid, aid, horas in tareas_ord:
+        elegibles = elegibles_para(cid, aid)
+        if not elegibles:
+            sin_asignar.append((cid, aid, horas, 'Sin profesor asignado a esta asignatura'))
+            continue
+        # Ordenar por capacidad restante (más libre primero)
+        elegibles_ord = sorted(elegibles, key=lambda p: load_sim[p] - prof_max_d.get(p, 25))
+        asignado = 0.0
+        for pid in elegibles_ord:
+            restante = prof_max_d.get(pid, 25) - load_sim[pid]
+            if restante <= 0:
+                continue
+            tomar = min(horas - asignado, restante)
+            load_sim[pid] += tomar
+            asig_sim.append((cid, aid, pid, tomar))
+            asignado += tomar
+            if asignado >= horas:
+                break
+        if asignado < horas - 0.01:
+            sin_asignar.append((cid, aid, horas - asignado,
+                                f'Profesores al límite (asignado {asignado:.1f}/{horas:.1f}h)'))
+
+    # ── Construir resultado ───────────────────────────────────────────────
     problemas = []
     avisos = []
 
-    # 1. Asignaturas sin ningún profesor asignado (globalmente)
-    for asig in Asignatura.query.all():
-        if not prof_por_asig.get(asig.id):
-            # Solo reportar si hay tareas para esa asignatura
-            usado = CursoAsignatura.query.filter_by(asignatura_id=asig.id).first()
-            if usado:
-                problemas.append({
-                    'tipo': 'asig_sin_prof',
-                    'texto': f'"{asig.nombre}" no tiene ningún profesor asignado pero aparece en el horario'
-                })
+    # Tareas sin asignar
+    if sin_asignar:
+        for cid, aid, faltan, razon in sin_asignar:
+            cn = curso_nombre_d.get(cid, f'Curso {cid}')
+            an = asig_map_loc.get(aid)
+            an = an.nombre if an else f'Asig {aid}'
+            problemas.append({
+                'tipo': 'sin_asignar',
+                'texto': f'{an} en {cn}: faltan {faltan:.1f}h — {razon}'
+            })
 
-    # 2. Pares (curso, asig) con 0 profesores elegibles
-    sin_elegibles = []
-    for ca in CursoAsignatura.query.all():
-        curso = Curso.query.get(ca.curso_id)
-        if not curso or curso.aula_cerrada:
-            continue
-        asig = asig_map_loc.get(ca.asignatura_id)
-        if not asig:
-            continue
-        elegibles = [pid for pid in prof_por_asig.get(ca.asignatura_id, [])
-                     if etapa_compat(pid, ca.asignatura_id)]
-        if not elegibles:
-            sin_elegibles.append(f'{asig.nombre} en {curso.nombre}')
+    # Profesores con 0 horas asignadas pero con horas lectivas
+    profs_vacios = []
+    for p in profesores_activos:
+        if prof_max_d.get(p.id, 0) > 0 and load_sim[p.id] == 0:
+            n_asigs = len(prof_por_asig.get(0, []))  # dummy check
+            total_asigs = sum(1 for _ in ProfesorAsignatura.query.filter_by(profesor_id=p.id))
+            profs_vacios.append({'nombre': p.nombre, 'max': prof_max_d[p.id], 'asigs': total_asigs})
+    if profs_vacios:
+        for pv in profs_vacios:
+            nivel = 'problema' if pv['asigs'] == 0 else 'aviso'
+            msg = f'{pv["nombre"]} (máx {pv["max"]}h) — ' + (
+                'no tiene asignaturas asignadas' if pv['asigs'] == 0
+                else f'sus asignaturas las cubren otros profesores'
+            )
+            (problemas if nivel == 'problema' else avisos).append({'tipo': 'prof_vacio', 'texto': msg})
 
-    if sin_elegibles:
-        problemas.append({
-            'tipo': 'sin_elegibles',
-            'texto': f'Sin profesor elegible para: {", ".join(sin_elegibles[:10])}{"…" if len(sin_elegibles)>10 else ""}'
+    # Resumen por profesor: horas asignadas vs máximo
+    resumen_profs = []
+    for p in sorted(profesores_activos, key=lambda x: x.nombre):
+        asignadas = round(load_sim[p.id], 1)
+        maximo = prof_max_d.get(p.id, 25)
+        n_asigs = ProfesorAsignatura.query.filter_by(profesor_id=p.id).count()
+        resumen_profs.append({
+            'nombre': p.nombre,
+            'asignadas': asignadas,
+            'maximo': maximo,
+            'n_asignaturas': n_asigs,
+            'ok': asignadas >= maximo * 0.8 or asignadas == 0
         })
 
-    # 3. Profesores activos sin ninguna asignatura asignada
-    profs_sin_asig = []
-    for p in profesores_activos:
-        total_asigs = ProfesorAsignatura.query.filter_by(profesor_id=p.id).count()
-        if total_asigs == 0 and (p.horas_lectivas or 0) > 0:
-            profs_sin_asig.append(p.nombre)
-    if profs_sin_asig:
-        avisos.append({
-            'tipo': 'prof_sin_asig',
-            'texto': f'Profesores con horas lectivas pero sin asignaturas: {", ".join(profs_sin_asig)}'
-        })
-
-    # 4. Clases de HH con pocas horas configuradas
-    for curso in cursos_activos:
-        if curso.etapa == 'Haur Hezkuntza':
-            total_h = sum((ca.horas_semanales or 0) for ca in CursoAsignatura.query.filter_by(curso_id=curso.id).all())
-            n_franjas = len([f for f in FRANJAS if f != 'Patio']) * len(DIAS_SEMANA)
-            if total_h < n_franjas * 0.7:
-                avisos.append({
-                    'tipo': 'hh_pocas_horas',
-                    'texto': f'{curso.nombre}: solo {total_h:.1f}h configuradas de {n_franjas} franjas disponibles'
-                })
-
-    # 5. Resumen por etapa: cuántas horas de clase vs cuántas puede cubrir cada prof
-    etapa_horas_necesarias = defaultdict(float)
-    for ca in CursoAsignatura.query.all():
-        curso = Curso.query.get(ca.curso_id)
-        if curso and not curso.aula_cerrada:
-            etapa_horas_necesarias[curso.etapa or 'Sin etapa'] += (ca.horas_semanales or 0)
-
-    etapa_horas_disponibles = defaultdict(int)
-    for p in profesores_activos:
-        etapas_p = prof_etapas.get(p.id, [])
-        cap = int(p.horas_lectivas or 0) or (p.horas_max_semanales or 25)
-        if not etapas_p:
-            for e in etapa_horas_necesarias:
-                etapa_horas_disponibles[e] += cap
-        else:
-            for e in etapas_p:
-                etapa_horas_disponibles[e] += cap
+    # Resumen por etapa
+    etapa_necesarias = defaultdict(float)
+    etapa_asignadas = defaultdict(float)
+    for cid, aid, pid, h in asig_sim:
+        etapa = curso_etapa_d.get(cid, 'Sin etapa') or 'Sin etapa'
+        etapa_asignadas[etapa] += h
+    for cid, aid, h in tareas:
+        etapa = curso_etapa_d.get(cid, 'Sin etapa') or 'Sin etapa'
+        etapa_necesarias[etapa] += h
+    for cid, aid, faltan, _ in sin_asignar:
+        pass  # ya incluido en etapa_necesarias
 
     resumen_etapas = []
-    for etapa, necesarias in sorted(etapa_horas_necesarias.items()):
-        disponibles = etapa_horas_disponibles.get(etapa, 0)
+    for etapa in sorted(etapa_necesarias):
+        nec = round(etapa_necesarias[etapa], 1)
+        asig = round(etapa_asignadas.get(etapa, 0), 1)
         resumen_etapas.append({
             'etapa': etapa,
-            'necesarias': round(necesarias, 1),
-            'disponibles': disponibles,
-            'ok': disponibles >= necesarias
+            'necesarias': nec,
+            'asignadas': asig,
+            'ok': asig >= nec - 0.1
         })
 
     return jsonify({
         'problemas': problemas,
         'avisos': avisos,
-        'resumen_etapas': resumen_etapas
+        'resumen_etapas': resumen_etapas,
+        'resumen_profs': resumen_profs
     })
 
 

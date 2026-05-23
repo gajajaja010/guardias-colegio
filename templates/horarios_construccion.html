@@ -1430,14 +1430,32 @@ function runDiagnostico() {
 
       // Resumen por etapa
       if (data.resumen_etapas && data.resumen_etapas.length > 0) {
-        html += '<h6 class="fw-bold mt-3 mb-2">Capacidad por etapa</h6>';
+        html += '<h6 class="fw-bold mt-3 mb-2">Simulación por etapa</h6>';
         html += '<table class="table table-sm table-bordered">';
-        html += '<thead><tr><th>Etapa</th><th>Horas necesarias</th><th>Capacidad profesores</th><th>Estado</th></tr></thead><tbody>';
+        html += '<thead><tr><th>Etapa</th><th>Horas necesarias</th><th>Se pueden asignar</th><th>Estado</th></tr></thead><tbody>';
         data.resumen_etapas.forEach(e => {
           var estado = e.ok
             ? '<span class="badge bg-success">OK</span>'
-            : '<span class="badge bg-danger">Insuficiente</span>';
-          html += '<tr><td>' + e.etapa + '</td><td>' + e.necesarias + 'h</td><td>' + e.disponibles + 'h</td><td>' + estado + '</td></tr>';
+            : '<span class="badge bg-danger">Faltan ' + (e.necesarias - e.asignadas).toFixed(1) + 'h</span>';
+          var rowClass = e.ok ? '' : ' class="table-danger"';
+          html += '<tr' + rowClass + '><td>' + e.etapa + '</td><td>' + e.necesarias + 'h</td><td>' + e.asignadas + 'h</td><td>' + estado + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      // Resumen por profesor
+      if (data.resumen_profs && data.resumen_profs.length > 0) {
+        html += '<h6 class="fw-bold mt-3 mb-2">Horas por profesor (simulación)</h6>';
+        html += '<table class="table table-sm table-bordered" style="font-size:.85rem">';
+        html += '<thead><tr><th>Profesor</th><th>Asignaturas</th><th>Asignadas</th><th>Máximo</th><th>Estado</th></tr></thead><tbody>';
+        data.resumen_profs.forEach(p => {
+          var pct = p.maximo > 0 ? Math.round(p.asignadas / p.maximo * 100) : 0;
+          var color = p.asignadas === 0 ? 'table-warning' : (pct < 50 ? 'table-warning' : '');
+          var badge = p.asignadas === 0
+            ? '<span class="badge bg-warning text-dark">Sin clases</span>'
+            : (pct < 50 ? '<span class="badge bg-warning text-dark">' + pct + '%</span>'
+               : '<span class="badge bg-success">' + pct + '%</span>');
+          html += '<tr class="' + color + '"><td>' + p.nombre + '</td><td>' + p.n_asignaturas + '</td><td>' + p.asignadas + 'h</td><td>' + p.maximo + 'h</td><td>' + badge + '</td></tr>';
         });
         html += '</tbody></table>';
       }
