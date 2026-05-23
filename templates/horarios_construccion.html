@@ -338,6 +338,10 @@
       {% endfor %}
     </select>
   </form>
+  {# Diagnóstico #}
+  <button class="btn btn-outline-info btn-sm" type="button" onclick="runDiagnostico()">
+    <i class="bi bi-search me-1"></i>Diagnóstico
+  </button>
   {# Generar horario #}
   <form method="post" action="{{ url_for('generar_horario_hc') }}"
         onsubmit="return confirm('¿Generar horario automático? Se borrará el actual.')">
@@ -1377,5 +1381,76 @@ function addEsp(profId) {
     selProf.value = profId;
   });
 })();
+</script>
+
+{# ── Modal Diagnóstico ── #}
+<div class="modal fade" id="modalDiagnostico" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-search me-2"></i>Diagnóstico del horario</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="diagBody">
+        <div class="text-center py-4">
+          <div class="spinner-border text-primary" role="status"></div>
+          <p class="mt-2 text-muted">Analizando datos…</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function runDiagnostico() {
+  var modal = new bootstrap.Modal(document.getElementById('modalDiagnostico'));
+  document.getElementById('diagBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2 text-muted">Analizando datos…</p></div>';
+  modal.show();
+  fetch("{{ url_for('diagnostico_horario') }}")
+    .then(r => r.json())
+    .then(data => {
+      var html = '';
+
+      // Problemas críticos
+      if (data.problemas && data.problemas.length > 0) {
+        html += '<div class="alert alert-danger mb-3"><strong><i class="bi bi-exclamation-triangle-fill me-1"></i>Problemas críticos</strong><ul class="mb-0 mt-2">';
+        data.problemas.forEach(p => { html += '<li>' + p.texto + '</li>'; });
+        html += '</ul></div>';
+      }
+
+      // Avisos
+      if (data.avisos && data.avisos.length > 0) {
+        html += '<div class="alert alert-warning mb-3"><strong><i class="bi bi-exclamation-circle me-1"></i>Avisos</strong><ul class="mb-0 mt-2">';
+        data.avisos.forEach(a => { html += '<li>' + a.texto + '</li>'; });
+        html += '</ul></div>';
+      }
+
+      // Resumen por etapa
+      if (data.resumen_etapas && data.resumen_etapas.length > 0) {
+        html += '<h6 class="fw-bold mt-3 mb-2">Capacidad por etapa</h6>';
+        html += '<table class="table table-sm table-bordered">';
+        html += '<thead><tr><th>Etapa</th><th>Horas necesarias</th><th>Capacidad profesores</th><th>Estado</th></tr></thead><tbody>';
+        data.resumen_etapas.forEach(e => {
+          var estado = e.ok
+            ? '<span class="badge bg-success">OK</span>'
+            : '<span class="badge bg-danger">Insuficiente</span>';
+          html += '<tr><td>' + e.etapa + '</td><td>' + e.necesarias + 'h</td><td>' + e.disponibles + 'h</td><td>' + estado + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      if (!data.problemas.length && !data.avisos.length) {
+        html += '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i>No se detectan problemas evidentes. Puedes generar el horario.</div>';
+      }
+
+      document.getElementById('diagBody').innerHTML = html;
+    })
+    .catch(err => {
+      document.getElementById('diagBody').innerHTML = '<div class="alert alert-danger">Error al obtener diagnóstico: ' + err + '</div>';
+    });
+}
 </script>
 {% endblock %}

@@ -2393,6 +2393,126 @@ def estado_generacion():
     return jsonify(estado)
 
 
+@app.route('/horarios-construccion/diagnostico')
+@login_required
+def diagnostico_horario():
+    """Analiza los datos y devuelve un JSON con problemas detectados."""
+    if not current_user.es_admin:
+        return jsonify({'error': 'Solo administradores'}), 403
+
+    profesores_activos = Profesor.query.filter_by(activo=True, de_baja=False, es_admin=False).all()
+    cursos_activos = Curso.query.filter_by(aula_cerrada=False).order_by(Curso.orden, Curso.nombre).all()
+
+    prof_por_asig = defaultdict(list)
+    for pa in ProfesorAsignatura.query.all():
+        prof_por_asig[pa.asignatura_id].append(pa.profesor_id)
+
+    prof_etapas = {p.id: parse_etapas(p.etapa) for p in profesores_activos}
+    prof_names = {p.id: p.nombre for p in profesores_activos}
+    curso_etapa_map = {c.id: c.etapa for c in cursos_activos}
+    asig_map_loc = {a.id: a for a in Asignatura.query.all()}
+
+    def etapa_compat(prof_id, asig_id):
+        asig = asig_map_loc.get(asig_id)
+        if not asig or not asig.etapa:
+            return True
+        etapas_p = prof_etapas.get(prof_id, [])
+        if not etapas_p:
+            return True
+        return asig.etapa in etapas_p
+
+    problemas = []
+    avisos = []
+
+    # 1. Asignaturas sin ningún profesor asignado (globalmente)
+    for asig in Asignatura.query.all():
+        if not prof_por_asig.get(asig.id):
+            # Solo reportar si hay tareas para esa asignatura
+            usado = CursoAsignatura.query.filter_by(asignatura_id=asig.id).first()
+            if usado:
+                problemas.append({
+                    'tipo': 'asig_sin_prof',
+                    'texto': f'"{asig.nombre}" no tiene ningún profesor asignado pero aparece en el horario'
+                })
+
+    # 2. Pares (curso, asig) con 0 profesores elegibles
+    sin_elegibles = []
+    for ca in CursoAsignatura.query.all():
+        curso = Curso.query.get(ca.curso_id)
+        if not curso or curso.aula_cerrada:
+            continue
+        asig = asig_map_loc.get(ca.asignatura_id)
+        if not asig:
+            continue
+        elegibles = [pid for pid in prof_por_asig.get(ca.asignatura_id, [])
+                     if etapa_compat(pid, ca.asignatura_id)]
+        if not elegibles:
+            sin_elegibles.append(f'{asig.nombre} en {curso.nombre}')
+
+    if sin_elegibles:
+        problemas.append({
+            'tipo': 'sin_elegibles',
+            'texto': f'Sin profesor elegible para: {", ".join(sin_elegibles[:10])}{"…" if len(sin_elegibles)>10 else ""}'
+        })
+
+    # 3. Profesores activos sin ninguna asignatura asignada
+    profs_sin_asig = []
+    for p in profesores_activos:
+        total_asigs = ProfesorAsignatura.query.filter_by(profesor_id=p.id).count()
+        if total_asigs == 0 and (p.horas_lectivas or 0) > 0:
+            profs_sin_asig.append(p.nombre)
+    if profs_sin_asig:
+        avisos.append({
+            'tipo': 'prof_sin_asig',
+            'texto': f'Profesores con horas lectivas pero sin asignaturas: {", ".join(profs_sin_asig)}'
+        })
+
+    # 4. Clases de HH con pocas horas configuradas
+    for curso in cursos_activos:
+        if curso.etapa == 'Haur Hezkuntza':
+            total_h = sum((ca.horas_semanales or 0) for ca in CursoAsignatura.query.filter_by(curso_id=curso.id).all())
+            n_franjas = len([f for f in FRANJAS if f != 'Patio']) * len(DIAS_SEMANA)
+            if total_h < n_franjas * 0.7:
+                avisos.append({
+                    'tipo': 'hh_pocas_horas',
+                    'texto': f'{curso.nombre}: solo {total_h:.1f}h configuradas de {n_franjas} franjas disponibles'
+                })
+
+    # 5. Resumen por etapa: cuántas horas de clase vs cuántas puede cubrir cada prof
+    etapa_horas_necesarias = defaultdict(float)
+    for ca in CursoAsignatura.query.all():
+        curso = Curso.query.get(ca.curso_id)
+        if curso and not curso.aula_cerrada:
+            etapa_horas_necesarias[curso.etapa or 'Sin etapa'] += (ca.horas_semanales or 0)
+
+    etapa_horas_disponibles = defaultdict(int)
+    for p in profesores_activos:
+        etapas_p = prof_etapas.get(p.id, [])
+        cap = int(p.horas_lectivas or 0) or (p.horas_max_semanales or 25)
+        if not etapas_p:
+            for e in etapa_horas_necesarias:
+                etapa_horas_disponibles[e] += cap
+        else:
+            for e in etapas_p:
+                etapa_horas_disponibles[e] += cap
+
+    resumen_etapas = []
+    for etapa, necesarias in sorted(etapa_horas_necesarias.items()):
+        disponibles = etapa_horas_disponibles.get(etapa, 0)
+        resumen_etapas.append({
+            'etapa': etapa,
+            'necesarias': round(necesarias, 1),
+            'disponibles': disponibles,
+            'ok': disponibles >= necesarias
+        })
+
+    return jsonify({
+        'problemas': problemas,
+        'avisos': avisos,
+        'resumen_etapas': resumen_etapas
+    })
+
+
 @app.route('/horarios-construccion/asignar-profesor', methods=['POST'])
 @login_required
 def asignar_franja_prof_hc():
