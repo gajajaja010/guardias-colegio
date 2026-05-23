@@ -488,12 +488,10 @@
                         style="background:#5c6bc0; font-size:.8rem;">
                     <i class="bi bi-people-fill me-1"></i>{{ slot_c.grupo_rel.nombre }}{% if slot_c.es_manual %} <i class="bi bi-lock-fill" style="font-size:.7rem;opacity:.9;"></i>{% endif %}
                   </span>
-                  {% if slot_c.tipo2 == 'libre' %}
-                  <span class="badge rounded-pill px-2 py-1 w-100"
-                        style="background:#adb5bd; font-size:.75rem;">
-                    <i class="bi bi-clock me-1"></i>½ Compl.
-                  </span>
-                  {% elif slot_c.tipo2 == 'media' %}
+                  {# Sin clase en este slot: el grupo ocupa la hora entera.
+                     No mostrar "½ Compl." aunque tipo2='libre' en BD — solo
+                     tiene sentido cuando hay una clase compartiendo la otra mitad. #}
+                  {% if slot_c.tipo2 == 'media' %}
                   <small class="text-muted" style="font-size:.72rem;">½ Grupo</small>
                   {% else %}
                   <small class="text-muted" style="font-size:.72rem;">Grupo de trabajo</small>
