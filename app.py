@@ -1954,129 +1954,146 @@ def generar_horario_automatico():
 
     random.shuffle(bt_vars)
 
-    # Pre-calcular cuántos items le quedan por colocar a cada profesor
-    # (se recalcula dinámicamente dentro del backtracking)
-    def _dom_size(item, remaining_list=None):
-        """MRV con slack: min(slots_válidos - items_pendientes_prof + 1).
-        Así un profesor con 21 items en 25 slots (slack=4) se procesa
-        antes que uno con 3 items en 25 slots (slack=22)."""
-        if item[0] == 'n':
-            slots = len(_slots_for(item[1], item[2], item[3]))
-            if remaining_list is not None:
-                pending = sum(1 for r in remaining_list
-                              if r[0] == 'n' and r[3] == item[3])
-                return slots - pending + 1  # slack
-            return slots
-        elif item[0] == 'c':
-            return len(_consec_seqs(item[1], item[2], item[3], item[4]))
-        else:
-            slots = len(_slots_for(item[1], item[2], item[3], item[5]))
-            return slots
-
-    best_bt = {'fallos': len(bt_vars), 'placed': []}
+    # ── FASE 2: Greedy con reinicios ─────────────────────────────────────
+    # El backtracking es demasiado lento para 200+ variables.
+    # Usamos greedy ordenado por slack con muchos reinicios aleatorios.
+    # Slack = slots_disponibles - items_pendientes_del_profesor:
+    #   Jaione (21 items, 25 slots) → slack=4 → se coloca ANTES
+    #   Profesor con 3 items, 25 slots → slack=22 → se coloca DESPUÉS
 
     import time as _time
     _bt_start = _time.time()
-    BT_TIMEOUT = 280
+    BT_TIMEOUT = 270
 
-    def _bt(remaining, placed, fallos):
-        if _time.time() - _bt_start > BT_TIMEOUT:
-            if fallos < best_bt['fallos']:
-                best_bt['fallos'] = fallos
-                best_bt['placed'] = placed[:]
-            return
-        if not remaining:
-            if fallos < best_bt['fallos']:
-                best_bt['fallos'] = fallos
-                best_bt['placed'] = placed[:]
-            return
-        if fallos >= best_bt['fallos']:
-            return  # poda: no puede mejorar el mejor actual
+    # Pre-calcular items_por_prof para slack inicial
+    items_por_prof = defaultdict(int)
+    for item in bt_vars:
+        if item[0] == 'n':
+            items_por_prof[item[3]] += 1
+        elif item[0] == 'p':
+            items_por_prof[item[3]] += 1
+            items_por_prof[item[5]] += 1
 
-        # MRV con slack: elegir la variable más restringida (menor slack)
-        best_i = min(range(len(remaining)), key=lambda i: _dom_size(remaining[i], remaining))
-        item = remaining[best_i]
-        rest = remaining[:best_i] + remaining[best_i + 1:]
+    def _initial_slack(item):
+        """Slack inicial para ordenación: menor = más urgente."""
+        if item[0] == 'n':
+            pid = item[3]
+            avail = sum(1 for d, f in slots_all
+                        if (d, f) not in p_occ[pid] and (d, f) not in c_occ[item[1]])
+            return avail - items_por_prof[pid]
+        elif item[0] == 'c':
+            pid = item[3]
+            n = item[4]
+            avail = len(_consec_seqs(item[1], item[2], item[3], n))
+            return avail - 1
+        else:  # paired
+            p1, p2 = item[3], item[5]
+            avail = sum(1 for d, f in slots_all
+                        if (d, f) not in p_occ[p1] and (d, f) not in p_occ[p2]
+                        and (d, f) not in c_occ[item[1]])
+            return avail - 1
+
+    # Ordenar bt_vars por slack ascendente (más apretado primero)
+    bt_vars_sorted = sorted(bt_vars, key=_initial_slack)
+
+    best_greedy = {'fallos': len(bt_vars), 'placed': []}
+
+    def _greedy_pass(order):
+        """Un pase greedy sobre los items en el orden dado."""
+        local_p_occ = {pid: set(s) for pid, s in p_occ.items()}
+        local_c_occ = {cid: set(s) for cid, s in c_occ.items()}
+        local_d_cnt = defaultdict(int, d_cnt)
+        placed_local = []
+        fallos_local = 0
+
+        for item in order:
+            if item[0] == 'n':
+                _, cid, aid, pid = item
+                mx = reglas_max_dia.get(aid)
+                slots = [(d, f) for d, f in slots_all
+                         if (d, f) not in local_c_occ.get(cid, set())
+                         and (d, f) not in local_p_occ.get(pid, set())
+                         and pid not in rp_excluir_franja.get((d, f), ())
+                         and (not mx or local_d_cnt[(cid, aid, d)] < mx)]
+                if not slots:
+                    fallos_local += 1
+                    continue
+                dia, franja = random.choice(slots)
+                local_p_occ.setdefault(pid, set()).add((dia, franja))
+                local_c_occ.setdefault(cid, set()).add((dia, franja))
+                local_d_cnt[(cid, aid, dia)] += 1
+                placed_local.append((cid, aid, pid, dia, franja, None, None))
+
+            elif item[0] == 'c':
+                _, cid, aid, pid, n = item
+                seqs = _consec_seqs(cid, aid, pid, n)
+                # Filtra con el estado local
+                valid_seqs = [s for s in seqs
+                              if all((d, f) not in local_c_occ.get(cid, set())
+                                     and (d, f) not in local_p_occ.get(pid, set())
+                                     for d, f in s)]
+                if not valid_seqs:
+                    fallos_local += n
+                    continue
+                seq = random.choice(valid_seqs)
+                for dia, franja in seq:
+                    local_p_occ.setdefault(pid, set()).add((dia, franja))
+                    local_c_occ.setdefault(cid, set()).add((dia, franja))
+                    local_d_cnt[(cid, aid, dia)] += 1
+                    placed_local.append((cid, aid, pid, dia, franja, None, None))
+
+            else:  # paired
+                _, cid, a1, p1, a2, p2 = item
+                slots = [(d, f) for d, f in slots_all
+                         if (d, f) not in local_c_occ.get(cid, set())
+                         and (d, f) not in local_p_occ.get(p1, set())
+                         and (d, f) not in local_p_occ.get(p2, set())
+                         and p1 not in rp_excluir_franja.get((d, f), ())
+                         and p2 not in rp_excluir_franja.get((d, f), ())]
+                if not slots:
+                    fallos_local += 2
+                    continue
+                dia, franja = random.choice(slots)
+                local_p_occ.setdefault(p1, set()).add((dia, franja))
+                if p2 != p1: local_p_occ.setdefault(p2, set()).add((dia, franja))
+                local_c_occ.setdefault(cid, set()).add((dia, franja))
+                local_d_cnt[(cid, a1, dia)] += 1
+                placed_local.append((cid, a1, p1, dia, franja, a2, p2))
+
+        return placed_local, fallos_local
+
+    # Reinicios: primero con orden de slack, luego con pequeña perturbación
+    iteracion = 0
+    while _time.time() - _bt_start < BT_TIMEOUT:
+        iteracion += 1
+        if iteracion == 1:
+            order = bt_vars_sorted[:]
+        else:
+            # Perturbar: barajar dentro de grupos de mismo slack±2
+            order = bt_vars_sorted[:]
+            # Pequeña perturbación aleatoria
+            for i in range(len(order) - 1):
+                if random.random() < 0.15:
+                    j = random.randint(i, min(i + 8, len(order) - 1))
+                    order[i], order[j] = order[j], order[i]
+
+        placed_local, fallos_local = _greedy_pass(order)
 
         with _gen_lock:
-            _gen_estado['intentos'] += 1
-            _gen_estado['mejor_fallos'] = best_bt['fallos'] if best_bt['fallos'] < len(bt_vars) else fallos
+            _gen_estado['intentos'] = iteracion
+            if best_greedy['fallos'] < len(bt_vars) or iteracion == 1:
+                _gen_estado['mejor_fallos'] = best_greedy['fallos']
 
-        if item[0] == 'n':
-            _, cid, aid, pid = item
-            slots = _slots_for(cid, aid, pid)
-            random.shuffle(slots)
-            if not slots:
-                _bt(rest, placed, fallos + 1)
-                return
-            for dia, franja in slots:
-                sl = (dia, franja)
-                p_occ[pid].add(sl); c_occ[cid].add(sl); d_cnt[(cid, aid, dia)] += 1
-                # Forward check: ningún item restante se queda sin opciones
-                if all(_dom_size(r) > 0 for r in rest):
-                    placed.append((cid, aid, pid, dia, franja, None, None))
-                    _bt(rest, placed, fallos)
-                    placed.pop()
-                    if best_bt['fallos'] == 0:
-                        p_occ[pid].discard(sl); c_occ[cid].discard(sl); d_cnt[(cid, aid, dia)] -= 1
-                        return
-                p_occ[pid].discard(sl); c_occ[cid].discard(sl); d_cnt[(cid, aid, dia)] -= 1
+        if fallos_local < best_greedy['fallos']:
+            best_greedy['fallos'] = fallos_local
+            best_greedy['placed'] = placed_local[:]
+            with _gen_lock:
+                _gen_estado['mejor_fallos'] = fallos_local
+            if fallos_local == 0:
+                break
 
-        elif item[0] == 'c':
-            _, cid, aid, pid, n = item
-            seqs = _consec_seqs(cid, aid, pid, n)
-            random.shuffle(seqs)
-            if not seqs:
-                _bt(rest, placed, fallos + n)
-                return
-            for seq in seqs:
-                for dia, franja in seq:
-                    p_occ[pid].add((dia, franja)); c_occ[cid].add((dia, franja)); d_cnt[(cid, aid, dia)] += 1
-                if all(_dom_size(r) > 0 for r in rest):
-                    for dia, franja in seq:
-                        placed.append((cid, aid, pid, dia, franja, None, None))
-                    _bt(rest, placed, fallos)
-                    for _ in seq: placed.pop()
-                    if best_bt['fallos'] == 0:
-                        for dia, franja in seq:
-                            p_occ[pid].discard((dia, franja)); c_occ[cid].discard((dia, franja)); d_cnt[(cid, aid, dia)] -= 1
-                        return
-                for dia, franja in seq:
-                    p_occ[pid].discard((dia, franja)); c_occ[cid].discard((dia, franja)); d_cnt[(cid, aid, dia)] -= 1
-
-        else:  # paired
-            _, cid, a1, p1, a2, p2 = item
-            slots = _slots_for(cid, a1, p1, p2)
-            random.shuffle(slots)
-            if not slots:
-                _bt(rest, placed, fallos + 2)
-                return
-            for dia, franja in slots:
-                sl = (dia, franja)
-                p_occ[p1].add(sl)
-                if p2 != p1: p_occ[p2].add(sl)
-                c_occ[cid].add(sl); d_cnt[(cid, a1, dia)] += 1
-                if all(_dom_size(r) > 0 for r in rest):
-                    placed.append((cid, a1, p1, dia, franja, a2, p2))
-                    _bt(rest, placed, fallos)
-                    placed.pop()
-                    if best_bt['fallos'] == 0:
-                        p_occ[p1].discard(sl)
-                        if p2 != p1: p_occ[p2].discard(sl)
-                        c_occ[cid].discard(sl); d_cnt[(cid, a1, dia)] -= 1
-                        return
-                p_occ[p1].discard(sl)
-                if p2 != p1: p_occ[p2].discard(sl)
-                c_occ[cid].discard(sl); d_cnt[(cid, a1, dia)] -= 1
-
-    with _gen_lock:
-        _gen_estado['intentos'] = 0
-        _gen_estado['mejor_fallos'] = len(bt_vars)
-
-    _bt(bt_vars, [], 0)
-
-    best_assignments = placed_base + best_bt['placed']
-    best_fallos = fallos_base + best_bt['fallos']
+    best_assignments = placed_base + best_greedy['placed']
+    best_fallos = fallos_base + best_greedy['fallos']
 
     # Escribir el mejor resultado a la base de datos
     for curso_id, asig_id, prof_id, dia, franja, asig2, prof2 in best_assignments:
