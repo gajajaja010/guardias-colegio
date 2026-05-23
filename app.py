@@ -1965,22 +1965,28 @@ def generar_horario_automatico():
     _bt_start = _time.time()
     BT_TIMEOUT = 270
 
-    # Pre-calcular items_por_prof para slack inicial
+    # Pre-calcular cuántos items hay por (prof, class) combinación
     items_por_prof = defaultdict(int)
+    items_por_clase = defaultdict(int)
     for item in bt_vars:
         if item[0] == 'n':
             items_por_prof[item[3]] += 1
+            items_por_clase[item[1]] += 1
         elif item[0] == 'p':
             items_por_prof[item[3]] += 1
             items_por_prof[item[5]] += 1
+            items_por_clase[item[1]] += 1
 
     def _initial_slack(item):
-        """Slack inicial para ordenación: menor = más urgente."""
+        """Slack combinado prof+clase: menor = más urgente."""
         if item[0] == 'n':
-            pid = item[3]
+            pid, cid = item[3], item[1]
+            # Slots válidos para AMBOS prof y clase libres
             avail = sum(1 for d, f in slots_all
-                        if (d, f) not in p_occ[pid] and (d, f) not in c_occ[item[1]])
-            return avail - items_por_prof[pid]
+                        if (d, f) not in p_occ[pid] and (d, f) not in c_occ[cid])
+            # Usar el máximo pendiente entre prof y clase (más restrictivo)
+            pending = max(items_por_prof[pid], items_por_clase[cid])
+            return avail - pending
         elif item[0] == 'c':
             pid = item[3]
             n = item[4]
@@ -2082,27 +2088,126 @@ def generar_horario_automatico():
 
         return placed_local, fallos_local
 
-    # Reinicios: primero con orden de slack, luego con pequeña perturbación
+    def _repair_pass(placed_in, fallos_items_in, order):
+        """Reparación local: para cada item fallido, intenta reubicar
+        el item que le bloquea en otro slot libre."""
+        local_p_occ = {pid: set(s) for pid, s in p_occ.items()}
+        local_c_occ = {cid: set(s) for cid, s in c_occ.items()}
+        local_d_cnt = defaultdict(int, d_cnt)
+        placed = list(placed_in)
+
+        # Reconstruir estado a partir de placed
+        placed_slots = {}  # (cid,aid,pid,dia,franja) -> index in placed
+        for idx, (cid, aid, pid, dia, franja, _, _) in enumerate(placed):
+            local_p_occ.setdefault(pid, set()).add((dia, franja))
+            local_c_occ.setdefault(cid, set()).add((dia, franja))
+            local_d_cnt[(cid, aid, dia)] += 1
+            placed_slots[(cid, aid, pid, dia, franja)] = idx
+
+        repaired = 0
+        for item in order:
+            if item[0] != 'n':
+                continue
+            _, cid, aid, pid = item
+            # ¿Ya está colocado?
+            already = any(c == cid and a == aid and p == pid
+                          for c, a, p, *_ in placed)
+            if already:
+                continue
+            # Intentar colocarlo moviendo bloqueadores
+            mx = reglas_max_dia.get(aid)
+            for dia, franja in slots_all:
+                sl = (dia, franja)
+                if pid in rp_excluir_franja.get(sl, ()):
+                    continue
+                if mx and local_d_cnt[(cid, aid, dia)] >= mx:
+                    continue
+                # Encontrar bloqueadores en este slot
+                blockers = []
+                if sl in local_p_occ.get(pid, set()):
+                    # Buscar qué item ocupa este slot del profesor
+                    blocker = next((it for it in placed
+                                    if it[2] == pid and (it[3], it[4]) == sl), None)
+                    if blocker:
+                        blockers.append(blocker)
+                if sl in local_c_occ.get(cid, set()):
+                    blocker = next((it for it in placed
+                                    if it[0] == cid and (it[3], it[4]) == sl), None)
+                    if blocker and blocker not in blockers:
+                        blockers.append(blocker)
+
+                if len(blockers) != 1:
+                    continue  # Solo reparar cuando hay un único bloqueador
+
+                b = blockers[0]
+                bcid, baid, bpid, bdia, bfranja = b[0], b[1], b[2], b[3], b[4]
+                # Intentar mover el bloqueador a otro slot
+                alt_slots = [s for s in slots_all if s != (bdia, bfranja)
+                             and s not in local_p_occ.get(bpid, set())
+                             and s not in local_c_occ.get(bcid, set())
+                             and bpid not in rp_excluir_franja.get(s, ())]
+                if not alt_slots:
+                    continue
+                # Elegir mejor slot alternativo (día menos cargado)
+                p_day = defaultdict(int)
+                for d2, _ in local_p_occ.get(bpid, set()):
+                    p_day[d2] += 1
+                alt_slots.sort(key=lambda s: p_day[s[0]])
+                new_dia, new_franja = alt_slots[0]
+
+                # Mover bloqueador
+                placed.remove(b)
+                local_p_occ[bpid].discard((bdia, bfranja))
+                local_c_occ[bcid].discard((bdia, bfranja))
+                local_d_cnt[(bcid, baid, bdia)] -= 1
+                local_p_occ.setdefault(bpid, set()).add((new_dia, new_franja))
+                local_c_occ.setdefault(bcid, set()).add((new_dia, new_franja))
+                local_d_cnt[(bcid, baid, new_dia)] += 1
+                placed.append((bcid, baid, bpid, new_dia, new_franja, b[5], b[6]))
+
+                # Colocar el item fallido
+                local_p_occ.setdefault(pid, set()).add(sl)
+                local_c_occ.setdefault(cid, set()).add(sl)
+                local_d_cnt[(cid, aid, dia)] += 1
+                placed.append((cid, aid, pid, dia, franja, None, None))
+                repaired += 1
+                break
+
+        return placed, repaired
+
+    # Reinicios: slack-ordenado + perturbación + reparación local
     iteracion = 0
     while _time.time() - _bt_start < BT_TIMEOUT:
         iteracion += 1
         if iteracion == 1:
             order = bt_vars_sorted[:]
+        elif iteracion % 30 == 0:
+            # Reinicio completo aleatorio
+            order = bt_vars[:]
+            random.shuffle(order)
         else:
-            # Perturbar: barajar dentro de grupos de mismo slack±2
             order = bt_vars_sorted[:]
-            # Pequeña perturbación aleatoria
             for i in range(len(order) - 1):
-                if random.random() < 0.15:
-                    j = random.randint(i, min(i + 8, len(order) - 1))
+                if random.random() < 0.20:
+                    j = random.randint(i, min(i + 12, len(order) - 1))
                     order[i], order[j] = order[j], order[i]
 
         placed_local, fallos_local = _greedy_pass(order)
 
+        # Reparación local si hay fallos
+        if fallos_local > 0 and fallos_local <= 20:
+            # Calcular items fallidos
+            placed_keys_local = set()
+            for c, a, p, *_ in placed_local:
+                placed_keys_local.add((c, a, p))
+            failed_items = [it for it in order
+                            if it[0] == 'n' and (it[1], it[2], it[3]) not in placed_keys_local]
+            placed_local, n_repaired = _repair_pass(placed_local, failed_items, failed_items)
+            fallos_local -= n_repaired
+
         with _gen_lock:
             _gen_estado['intentos'] = iteracion
-            if best_greedy['fallos'] < len(bt_vars) or iteracion == 1:
-                _gen_estado['mejor_fallos'] = best_greedy['fallos']
+            _gen_estado['mejor_fallos'] = best_greedy['fallos']
 
         if fallos_local < best_greedy['fallos']:
             best_greedy['fallos'] = fallos_local
