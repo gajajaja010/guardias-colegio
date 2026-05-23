@@ -2012,6 +2012,17 @@ def generar_horario_automatico():
         placed_local = []
         fallos_local = 0
 
+        # Heurística de coordinación: para cada clase, qué profs tienen
+        # items pendientes. Preferiremos slots donde esos profs ya estén
+        # ocupados para no "robarles" los únicos huecos disponibles.
+        pending_class_profs = defaultdict(set)
+        for it in order:
+            if it[0] == 'n':
+                pending_class_profs[it[1]].add(it[3])   # cid → pid
+            elif it[0] == 'p':
+                pending_class_profs[it[1]].add(it[3])
+                pending_class_profs[it[1]].add(it[5])
+
         for item in order:
             if item[0] == 'n':
                 _, cid, aid, pid = item
@@ -2024,18 +2035,30 @@ def generar_horario_automatico():
                 if not slots:
                     fallos_local += 1
                     continue
-                # LCV: preferir el día donde el profesor tenga menos clases ya
-                # asignadas (esparcir la carga del profesor por la semana)
+                # Heurística combinada:
+                #   (1) Esparcir carga: preferir días con menos clases del prof y la clase
+                #   (2) Coordinación: preferir slots donde otros profs pendientes
+                #       de la misma clase ya están ocupados (así no les robamos
+                #       sus únicos huecos libres).
                 p_day = defaultdict(int)
                 for d2, _ in local_p_occ.get(pid, set()):
                     p_day[d2] += 1
                 c_day = defaultdict(int)
                 for d2, _ in local_c_occ.get(cid, set()):
                     c_day[d2] += 1
-                slots.sort(key=lambda s: p_day[s[0]] + 0.5 * c_day[s[0]])
-                # Entre los slots con mejor score, elegir al azar
-                best_score = p_day[slots[0][0]] + 0.5 * c_day[slots[0][0]]
-                candidates = [s for s in slots if p_day[s[0]] + 0.5 * c_day[s[0]] <= best_score + 0.5]
+                other_profs_in_class = pending_class_profs[cid] - {pid}
+                scored = []
+                for s in slots:
+                    d, _ = s
+                    spread = p_day[d] + 0.5 * c_day[d]
+                    # coord_bonus: cuántos de los otros profs pendientes ya
+                    # están ocupados en este slot (mayor = más "seguro" usarlo)
+                    coord_bonus = sum(1 for p2 in other_profs_in_class
+                                      if s in local_p_occ.get(p2, set()))
+                    scored.append((spread - coord_bonus, s))
+                scored.sort(key=lambda x: x[0])
+                best_sc = scored[0][0]
+                candidates = [s for sc, s in scored if sc <= best_sc + 0.5]
                 dia, franja = random.choice(candidates)
                 local_p_occ.setdefault(pid, set()).add((dia, franja))
                 local_c_occ.setdefault(cid, set()).add((dia, franja))
