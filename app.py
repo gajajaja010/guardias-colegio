@@ -2839,6 +2839,25 @@ def _asignar_grupos_trabajo():
     franjas_clase = [f for f in FRANJAS if f != 'Patio']
     slots_all = [(dia, franja) for dia in DIAS_SEMANA for franja in franjas_clase]
 
+    # ── Corregir tipo2 en slots manuales de grupo según las horas actuales ──
+    # Si un slot manual tiene tipo2='libre' o tipo2='media' pero el miembro
+    # ya no tiene horas fraccionarias (ej. cambió de 1.5 a 2), corregirlo.
+    miembro_fraccion = {}   # pid -> tiene_fraccion (bool)
+    for pg in ProfesorGrupo.query.all():
+        fraccion = (pg.horas_semanales % 1) >= 0.5
+        # Un prof puede estar en varios grupos; marcamos fracción si alguno la tiene
+        miembro_fraccion[pg.profesor_id] = miembro_fraccion.get(pg.profesor_id, False) or fraccion
+
+    for sc in SlotComplementaria.query.filter_by(es_manual=True, tipo='grupo').all():
+        tiene_frac = miembro_fraccion.get(sc.profesor_id, False)
+        if not tiene_frac and sc.tipo2 in ('libre', 'media'):
+            # Las horas ya son enteras: el slot es de grupo completo
+            sc.tipo2 = None
+        elif tiene_frac and sc.tipo2 is None:
+            # Tiene fracción pero el slot no está marcado: no tocar el último slot
+            # (se marcará en la regeneración automática; aquí solo corregimos excesos)
+            pass
+
     # Slots ya ocupados por clases para cada profesor
     prof_ocupado = defaultdict(set)
     for asig in HorarioAsignacion.query.all():
