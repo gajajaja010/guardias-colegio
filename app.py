@@ -1963,7 +1963,7 @@ def generar_horario_automatico():
 
     import time as _time
     _bt_start = _time.time()
-    BT_TIMEOUT = 270
+    BT_TIMEOUT = 480  # 8 minutos: datos muy ajustados (21.5/25 slots)
 
     # ── 2a) Greedy para c/p ─────────────────────────────────────────────
     gp_occ = {pid: set(s) for pid, s in p_occ.items()}
@@ -2116,7 +2116,8 @@ def generar_horario_automatico():
                 pending_cls[cid].discard(pid)
                 continue
 
-            # Heurística: esparcir carga + coordinación
+            # ── Heurísticas de puntuación ──────────────────────────────
+            # 1. Esparcir carga: preferir días con menos clases del prof/clase
             p_day = defaultdict(int)
             c_day = defaultdict(int)
             for li2 in range(N):
@@ -2127,16 +2128,34 @@ def generar_horario_automatico():
                     if cid2 == cid:
                         c_day[mc_slot[li2][0]] += 1
 
-            other_profs = pending_cls[cid] - {pid}
+            # 2. Coordinación de clase: otros profs pendientes de esta clase
+            #    ya ocupados aquí → usar este slot es seguro para ellos
+            other_profs_cls = pending_cls[cid] - {pid}
+
+            # 3. Coordinación cruzada de profesor: otras clases donde el mismo
+            #    prof aún tiene items pendientes. Preferir slots donde esas
+            #    clases ya están ocupadas → no "robamos" el único slot donde
+            #    podríamos colocar Inglés en LH2 más tarde.
+            prof_other_cls = set()
+            for li2 in range(N):
+                if mc_slot[li2] is None and li2 != li:
+                    cid2, _, pid2 = n_items_list[li2]
+                    if pid2 == pid and cid2 != cid:
+                        prof_other_cls.add(cid2)
+
             scored = []
             for s in free:
                 d, f = s
                 spread = p_day[d] + 0.5 * c_day[d]
-                # coord_bonus: otros profs pendientes ya ocupados en este slot
-                coord = sum(1 for p2 in other_profs
-                            if _ps.get((p2, d, f)))
+                # Bonus clase: otros profs del aula ya ocupados aquí
+                cls_coord = sum(1 for p2 in other_profs_cls
+                                if _ps.get((p2, d, f)))
+                # Bonus cruzado: las otras clases del prof ya tienen prof aquí
+                # → usar este slot no bloquea nada que no esté ya bloqueado
+                cross_coord = sum(1 for cid2 in prof_other_cls
+                                  if _cs.get((cid2, d, f)))
                 noise = random.uniform(0, perturb) if perturb > 0 else 0
-                scored.append((spread - coord + noise, s))
+                scored.append((spread - cls_coord - cross_coord + noise, s))
             scored.sort(key=lambda x: x[0])
             best_sc = scored[0][0]
             candidates = [s for sc, s in scored if sc <= best_sc + 0.5]
