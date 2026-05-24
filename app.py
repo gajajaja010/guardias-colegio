@@ -1954,40 +1954,31 @@ def generar_horario_automatico():
 
     random.shuffle(bt_vars)
 
-    # ── FASE 2: Min-Conflicts Local Search ───────────────────────────────
-    # Reemplaza el Greedy+Reparación anterior.
-    # Clave: puede REUBICAR items ya colocados para hacer hueco a los que fallan.
-    #
-    # Algoritmo:
-    #   1. Items c/p (consecutivos y pareados) → greedy clásico (son pocos).
-    #   2. Items n (normales, la mayoría) → Min-Conflicts:
-    #      a) Warm-start: asignar cada item al slot con menos conflictos,
-    #         incluso si quedan conflictos iniciales.
-    #      b) Bucle: elegir item con conflicto, moverlo al slot con menos
-    #         conflictos. El algoritmo puede deshacer asignaciones previas.
-    #      c) Guardar la mejor solución parcial; reiniciar con perturbación
-    #         si se estanca.
+    # ── FASE 2: Greedy con reinicios + Min-Conflicts para fallidos ────────
+    # Estrategia:
+    #   1. Items c/p (consecutivos/pareados): greedy clásico.
+    #   2. Items n (normales): greedy ordenado por slack + heurística de
+    #      coordinación de clase. Si quedan fallidos, min-conflicts solo
+    #      sobre esos items (permite mover ya-colocados para hacer hueco).
 
     import time as _time
     _bt_start = _time.time()
     BT_TIMEOUT = 270
 
-    # ── 2a) Greedy para items c/p ───────────────────────────────────────
+    # ── 2a) Greedy para c/p ─────────────────────────────────────────────
     gp_occ = {pid: set(s) for pid, s in p_occ.items()}
     gc_occ = {cid: set(s) for cid, s in c_occ.items()}
     gd_cnt = defaultdict(int, d_cnt)
     cp_placed = []
     cp_fallos = 0
 
-    # Calcular slack inicial para ordenar c/p (más restrictivos primero)
     def _cp_slack(item):
         if item[0] == 'c':
             return len(_consec_seqs(item[1], item[2], item[3], item[4]))
-        else:  # 'p'
-            p1, p2 = item[3], item[5]
-            return sum(1 for d, f in slots_all
-                       if (d, f) not in p_occ[p1] and (d, f) not in p_occ[p2]
-                       and (d, f) not in c_occ[item[1]])
+        p1, p2 = item[3], item[5]
+        return sum(1 for d, f in slots_all
+                   if (d, f) not in p_occ[p1] and (d, f) not in p_occ[p2]
+                   and (d, f) not in c_occ[item[1]])
 
     cp_vars = sorted([it for it in bt_vars if it[0] in ('c', 'p')], key=_cp_slack)
 
@@ -2008,8 +1999,7 @@ def generar_horario_automatico():
                     cp_placed.append((cid, aid, pid, dia, franja, None, None))
             else:
                 cp_fallos += n
-
-        else:  # 'p'
+        else:
             _, cid, a1, p1, a2, p2 = item
             slots = [(d, f) for d, f in slots_all
                      if (d, f) not in gc_occ.get(cid, set())
@@ -2018,7 +2008,6 @@ def generar_horario_automatico():
                      and p1 not in rp_excluir_franja.get((d, f), ())
                      and p2 not in rp_excluir_franja.get((d, f), ())]
             if slots:
-                # Preferir días con carga equilibrada
                 p1d = defaultdict(int)
                 p2d = defaultdict(int)
                 for d2, _ in gp_occ.get(p1, set()): p1d[d2] += 1
@@ -2033,15 +2022,14 @@ def generar_horario_automatico():
             else:
                 cp_fallos += 2
 
-    # ── 2b) Min-Conflicts para n-items ──────────────────────────────────
+    # ── 2b) N-items ──────────────────────────────────────────────────────
     # gp_occ / gc_occ ahora incluyen manual + fijar + c/p → slots FIJOS.
-    # Los n-items NO pueden usar esos slots (restricción dura).
 
-    n_items_list = [(item[1], item[2], item[3])   # (cid, aid, pid)
+    n_items_list = [(item[1], item[2], item[3])
                     for item in bt_vars if item[0] == 'n']
     N = len(n_items_list)
 
-    # Slots válidos para cada n-item (solo restricciones duras, estático)
+    # Slots válidos (restricciones duras, estático)
     n_valid = []
     for cid, aid, pid in n_items_list:
         n_valid.append([s for s in slots_all
@@ -2049,11 +2037,26 @@ def generar_horario_automatico():
                         and s not in gc_occ.get(cid, set())
                         and pid not in rp_excluir_franja.get(s, ())])
 
-    # Estructuras de Min-Conflicts
-    mc_slot = [None] * N          # mc_slot[li] = (dia, franja)
-    _ps = defaultdict(set)        # (pid, dia, franja) → {li}: conflictos prof
-    _cs = defaultdict(set)        # (cid, dia, franja) → {li}: conflictos clase
-    _dc = defaultdict(int)        # (cid, aid, dia) → count (para max/día)
+    # Slack ordering: más apretado primero
+    items_por_prof = defaultdict(int)
+    items_por_clase = defaultdict(int)
+    for li, (cid, aid, pid) in enumerate(n_items_list):
+        items_por_prof[pid] += 1
+        items_por_clase[cid] += 1
+
+    def _n_slack(li):
+        cid, aid, pid = n_items_list[li]
+        avail = len(n_valid[li])
+        pending = max(items_por_prof[pid], items_por_clase[cid])
+        return avail - pending
+
+    n_sorted = sorted(range(N), key=_n_slack)
+
+    # Estructuras de ocupación (para greedy y min-conflicts)
+    mc_slot = [None] * N
+    _ps = defaultdict(set)   # (pid, d, f) → {li}
+    _cs = defaultdict(set)   # (cid, d, f) → {li}
+    _dc = defaultdict(int)   # (cid, aid, d) → count
 
     def mc_put(li, slot):
         cid, aid, pid = n_items_list[li]
@@ -2074,7 +2077,7 @@ def generar_horario_automatico():
         _dc[(cid, aid, d)] -= 1
         mc_slot[li] = None
 
-    def mc_conflicts(li, slot):
+    def mc_conflict_count(li, slot):
         """Conflictos que tendría li en slot (sin contar a li mismo)."""
         cid, aid, pid = n_items_list[li]
         d, f = slot
@@ -2088,102 +2091,190 @@ def generar_horario_automatico():
             dc = max(0, day_used - (mx - 1))
         return pc + cc + dc
 
-    def total_conflicts():
-        return (sum(max(0, len(v) - 1) for v in _ps.values()) +
-                sum(max(0, len(v) - 1) for v in _cs.values()))
+    def _greedy_pass(order, perturb=0.0):
+        """Greedy sin conflictos. Devuelve lista de índices fallidos."""
+        for li in range(N):
+            mc_pull(li)
 
-    def rebuild_from(snapshot):
-        """Reconstruir estructuras desde un snapshot de mc_slot."""
+        # Coordinación: profs pendientes por clase
+        pending_cls = defaultdict(set)
+        for li in order:
+            cid, aid, pid = n_items_list[li]
+            pending_cls[cid].add(pid)
+
+        failed = []
+        for li in order:
+            cid, aid, pid = n_items_list[li]
+            mx = reglas_max_dia.get(aid)
+            # Slots libres (0 conflictos)
+            free = [s for s in n_valid[li]
+                    if not _ps.get((pid, s[0], s[1]))
+                    and not _cs.get((cid, s[0], s[1]))
+                    and (not mx or _dc[(cid, aid, s[0])] < mx)]
+            if not free:
+                failed.append(li)
+                pending_cls[cid].discard(pid)
+                continue
+
+            # Heurística: esparcir carga + coordinación
+            p_day = defaultdict(int)
+            c_day = defaultdict(int)
+            for li2 in range(N):
+                if mc_slot[li2] is not None:
+                    cid2, _, pid2 = n_items_list[li2]
+                    if pid2 == pid:
+                        p_day[mc_slot[li2][0]] += 1
+                    if cid2 == cid:
+                        c_day[mc_slot[li2][0]] += 1
+
+            other_profs = pending_cls[cid] - {pid}
+            scored = []
+            for s in free:
+                d, f = s
+                spread = p_day[d] + 0.5 * c_day[d]
+                # coord_bonus: otros profs pendientes ya ocupados en este slot
+                coord = sum(1 for p2 in other_profs
+                            if _ps.get((p2, d, f)))
+                noise = random.uniform(0, perturb) if perturb > 0 else 0
+                scored.append((spread - coord + noise, s))
+            scored.sort(key=lambda x: x[0])
+            best_sc = scored[0][0]
+            candidates = [s for sc, s in scored if sc <= best_sc + 0.5]
+            mc_put(li, random.choice(candidates))
+            pending_cls[cid].discard(pid)
+
+        return failed
+
+    def _mc_repair(failed_items):
+        """Min-conflicts solo sobre los items fallidos (puede mover cualquier item)."""
+        # Colocar fallidos en slot con menos conflictos (pueden conflictuar)
+        for li in failed_items:
+            if n_valid[li]:
+                best_s = min(n_valid[li], key=lambda s: mc_conflict_count(li, s))
+                mc_put(li, best_s)
+
+        best_snap = list(mc_slot)
+        best_tc = sum(max(0, len(v) - 1) for v in _ps.values()) + \
+                  sum(max(0, len(v) - 1) for v in _cs.values())
+
+        no_improve = 0
+        for _ in range(20000):
+            conflicted = [li for li in range(N)
+                          if mc_slot[li] is not None
+                          and mc_conflict_count(li, mc_slot[li]) > 0]
+            if not conflicted:
+                return 0  # ¡Resuelto!
+
+            tc = sum(max(0, len(v) - 1) for v in _ps.values()) + \
+                 sum(max(0, len(v) - 1) for v in _cs.values())
+            if tc < best_tc:
+                best_tc = tc
+                best_snap = list(mc_slot)
+                no_improve = 0
+            else:
+                no_improve += 1
+
+            if no_improve >= 2000:
+                # Restaurar mejor y perturbar
+                _ps.clear(); _cs.clear(); _dc.clear()
+                for li2, s2 in enumerate(best_snap):
+                    mc_slot[li2] = s2
+                    if s2 is not None:
+                        cid2, aid2, pid2 = n_items_list[li2]
+                        d2, f2 = s2
+                        _ps[(pid2, d2, f2)].add(li2)
+                        _cs[(cid2, d2, f2)].add(li2)
+                        _dc[(cid2, aid2, d2)] += 1
+                for _ in range(5):
+                    li_r = random.randint(0, N - 1)
+                    if n_valid[li_r]:
+                        mc_pull(li_r)
+                        mc_put(li_r, random.choice(n_valid[li_r]))
+                no_improve = 0
+                continue
+
+            li = random.choice(conflicted)
+            mc_pull(li)
+            best_s = min(n_valid[li], key=lambda s: mc_conflict_count(li, s))
+            mc_put(li, best_s)
+
+        # Restaurar mejor encontrado
         _ps.clear(); _cs.clear(); _dc.clear()
-        for li2, slot2 in enumerate(snapshot):
-            if slot2 is not None:
-                mc_slot[li2] = slot2
+        for li2, s2 in enumerate(best_snap):
+            mc_slot[li2] = s2
+            if s2 is not None:
                 cid2, aid2, pid2 = n_items_list[li2]
-                d2, f2 = slot2
+                d2, f2 = s2
                 _ps[(pid2, d2, f2)].add(li2)
                 _cs[(cid2, d2, f2)].add(li2)
                 _dc[(cid2, aid2, d2)] += 1
-            else:
-                mc_slot[li2] = None
+        return best_tc
 
-    # Warm-start: asignar cada n-item al slot con menos conflictos
-    # (puede generar conflictos iniciales, el bucle los resuelve)
-    for li in range(N):
-        valid = n_valid[li]
-        if not valid:
-            continue
-        best_s = min(valid, key=lambda s: mc_conflicts(li, s))
-        mc_put(li, best_s)
-
-    best_mc = list(mc_slot)
-    best_tc = total_conflicts()
-
-    no_improve = 0
-    mc_iter = 0
-    with _gen_lock:
-        _gen_estado['intentos'] = 0
-        _gen_estado['mejor_fallos'] = best_tc
+    # ── Bucle principal de reinicios ─────────────────────────────────────
+    best_n_failed = N
+    best_mc = [None] * N
+    iteration = 0
 
     while _time.time() - _bt_start < BT_TIMEOUT:
-        mc_iter += 1
-
-        # Encontrar items con conflictos
-        conflicted = [li for li in range(N)
-                      if mc_slot[li] is not None
-                      and mc_conflicts(li, mc_slot[li]) > 0]
-
-        if not conflicted:
-            best_mc = list(mc_slot)
-            best_tc = 0
-            break  # ¡Solución perfecta!
-
-        # Guardar mejor
-        tc = total_conflicts()
-        if tc < best_tc:
-            best_tc = tc
-            best_mc = list(mc_slot)
-            no_improve = 0
-            with _gen_lock:
-                _gen_estado['mejor_fallos'] = best_tc
-        else:
-            no_improve += 1
-
+        iteration += 1
         with _gen_lock:
-            _gen_estado['intentos'] = mc_iter
+            _gen_estado['intentos'] = iteration
+            _gen_estado['mejor_fallos'] = best_n_failed
 
-        # Reinicio si estancado: restaurar mejor + perturbar
-        if no_improve >= 3000:
-            rebuild_from(best_mc)
-            n_perturb = max(5, len(conflicted) // 3)
-            for _ in range(n_perturb):
-                li_r = random.randint(0, N - 1)
-                if n_valid[li_r]:
-                    mc_pull(li_r)
-                    mc_put(li_r, random.choice(n_valid[li_r]))
-            no_improve = 0
-            continue
+        if iteration == 1:
+            order = n_sorted[:]
+            perturb = 0.0
+        elif iteration % 25 == 0:
+            order = list(range(N))
+            random.shuffle(order)
+            perturb = 0.3
+        else:
+            order = n_sorted[:]
+            for i in range(len(order) - 1):
+                if random.random() < 0.15:
+                    j = random.randint(i, min(i + 10, len(order) - 1))
+                    order[i], order[j] = order[j], order[i]
+            perturb = 0.1
 
-        # Mover item conflictivo al slot con menos conflictos
-        li = random.choice(conflicted)
-        valid = n_valid[li]
-        if not valid:
-            continue
-        mc_pull(li)
-        best_s = min(valid, key=lambda s: mc_conflicts(li, s))
-        min_c = mc_conflicts(li, best_s)
-        # Entre los empatados elegir al azar (escape de óptimos locales)
-        tied = [s for s in valid if mc_conflicts(li, s) <= min_c]
-        mc_put(li, random.choice(tied))
+        failed = _greedy_pass(order, perturb)
+        n_failed = len(failed)
 
-    # ── Traducir mejor asignación a placed_n ───────────────────────────
-    # Reconstruir desde best_mc para obtener contadores limpios
-    rebuild_from(best_mc)
+        # Reparación min-conflicts si hay pocos fallidos
+        if 0 < n_failed <= 15:
+            _mc_repair(failed)
+            # Contar conflictos restantes como fallidos
+            conflicted_after = [li for li in range(N)
+                                 if mc_slot[li] is not None
+                                 and mc_conflict_count(li, mc_slot[li]) > 0]
+            n_failed = len([li for li in range(N) if mc_slot[li] is None])
+            # Para items con conflicto: se resolvió si n_failed < previo
+            if conflicted_after:
+                n_failed += len(conflicted_after)
+
+        if n_failed < best_n_failed:
+            best_n_failed = n_failed
+            best_mc = list(mc_slot)
+            with _gen_lock:
+                _gen_estado['mejor_fallos'] = n_failed
+            if n_failed == 0:
+                break
+
+    # ── Construir placed_n desde best_mc ─────────────────────────────────
+    # Reconstruir contadores desde best_mc
+    _ps.clear(); _cs.clear(); _dc.clear()
+    for li2, s2 in enumerate(best_mc):
+        mc_slot[li2] = s2
+        if s2 is not None:
+            cid2, aid2, pid2 = n_items_list[li2]
+            d2, f2 = s2
+            _ps[(pid2, d2, f2)].add(li2)
+            _cs[(cid2, d2, f2)].add(li2)
+            _dc[(cid2, aid2, d2)] += 1
 
     placed_n = []
-    used_p_slots = set()   # (pid, dia, franja) ya asignados
-    used_c_slots = set()   # (cid, dia, franja) ya asignados
+    used_p = set()
+    used_c = set()
     n_fallos = 0
-
     for li in range(N):
         slot = best_mc[li]
         if slot is None:
@@ -2191,13 +2282,11 @@ def generar_horario_automatico():
             continue
         cid, aid, pid = n_items_list[li]
         d, f = slot
-        # Si hay conflicto (dos items en el mismo slot prof/clase),
-        # solo incluir el primero; el resto se marca como fallo.
-        if (pid, d, f) in used_p_slots or (cid, d, f) in used_c_slots:
+        if (pid, d, f) in used_p or (cid, d, f) in used_c:
             n_fallos += 1
             continue
-        used_p_slots.add((pid, d, f))
-        used_c_slots.add((cid, d, f))
+        used_p.add((pid, d, f))
+        used_c.add((cid, d, f))
         placed_n.append((cid, aid, pid, d, f, None, None))
 
     best_assignments = placed_base + cp_placed + placed_n
@@ -2900,13 +2989,23 @@ def _asignar_grupos_trabajo():
         if len(shared_slots) < max_horas:
             grupos_sin_hueco.append(f'{grupo.nombre} ({len(shared_slots)}/{max_horas})')
 
-        # Crear slots por miembro según sus horas individuales
+        # Crear slots por miembro según sus horas individuales.
+        # IMPORTANTE: descontar slots manuales ya existentes para no
+        # duplicar cuando el usuario tiene horas bloqueadas (🔒).
         for pid in prof_ids:
             m = miembro_map[pid]
             n_slots = math.ceil(m.horas_semanales)
             tiene_fraccion = (m.horas_semanales % 1) >= 0.5
-            for i, (dia, franja) in enumerate(shared_slots[:n_slots]):
-                es_ultimo = (i == n_slots - 1)
+
+            # Slots manuales existentes para este miembro en este grupo
+            n_existing = SlotComplementaria.query.filter_by(
+                profesor_id=pid, grupo_id=grupo.id, es_manual=True
+            ).count()
+            prof_slots_grupo[pid] += n_existing  # contar en el total
+
+            n_new = max(0, n_slots - n_existing)
+            for i, (dia, franja) in enumerate(shared_slots[:n_new]):
+                es_ultimo = (i == n_new - 1)
                 tipo2 = 'media' if (es_ultimo and tiene_fraccion) else None
                 sc = SlotComplementaria(
                     profesor_id=pid, dia=dia, franja=franja,
