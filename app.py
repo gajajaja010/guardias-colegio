@@ -18,6 +18,11 @@ if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,    # Detecta conexiones muertas antes de usarlas
+    'pool_recycle': 280,      # Recicla conexiones cada 4.5 min (Render las cierra a los 5)
+    'connect_args': {'connect_timeout': 10} if _db_url.startswith('postgresql') else {},
+}
 
 # Email config (se configura en settings)
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
@@ -325,6 +330,25 @@ class ConfiguracionEmail(db.Model):
     # 'manual'     → el admin revisa la ausencia y aprueba la asignación
     modo_guardias = db.Column(db.String(20), default='manual')
     anthropic_api_key = db.Column(db.String(200))
+
+
+# ───────────────────────────── ERROR HANDLING ─────────────────────────────
+
+import traceback as _tb
+import logging
+logging.basicConfig(level=logging.ERROR)
+
+@app.errorhandler(500)
+def internal_error(e):
+    logging.error('500 error:\n' + _tb.format_exc())
+    db.session.rollback()
+    return render_template('500.html', error=str(e)), 500
+
+@app.errorhandler(Exception)
+def unhandled_exception(e):
+    logging.error('Unhandled exception:\n' + _tb.format_exc())
+    db.session.rollback()
+    return render_template('500.html', error=str(e)), 500
 
 
 # ───────────────────────────── AUTH ─────────────────────────────
