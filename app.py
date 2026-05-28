@@ -564,6 +564,40 @@ def _auto_asignar_asignaturas(profesor):
         db.session.add(ProfesorAsignatura(profesor_id=profesor.id, asignatura_id=asig_id))
 
 
+def _sincronizar_horario_profesores():
+    """Deriva HorarioProfesor (tiene_clase) desde HorarioAsignacion."""
+    from collections import defaultdict
+    slots = defaultdict(list)
+    for ha in HorarioAsignacion.query.all():
+        nombre = ha.asignatura.nombre if ha.asignatura else ''
+        slots[(ha.profesor_id, ha.dia, ha.franja)].append(nombre)
+        if ha.profesor2_id:
+            nombre2 = ha.asignatura2.nombre if ha.asignatura2 else nombre
+            slots[(ha.profesor2_id, ha.dia, ha.franja)].append(nombre2)
+    prof_ids = {k[0] for k in slots}
+    for pid in prof_ids:
+        HorarioProfesor.query.filter_by(profesor_id=pid, tiene_clase=True).delete()
+    count = 0
+    for (pid, dia, franja), asigs in slots.items():
+        db.session.add(HorarioProfesor(
+            profesor_id=pid, dia=dia, franja=franja,
+            tiene_clase=True,
+            asignatura=', '.join(sorted(set(a for a in asigs if a)))
+        ))
+        count += 1
+    db.session.commit()
+    return count
+
+
+@app.route('/admin/sincronizar-horario-profesores', methods=['POST'])
+@login_required
+def sincronizar_horario_profesores():
+    if not current_user.es_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+    count = _sincronizar_horario_profesores()
+    return jsonify({'ok': True, 'slots': count})
+
+
 @app.route('/admin/ejecutar-importacion-horarios', methods=['POST'])
 @login_required
 def ejecutar_importacion_horarios():
@@ -868,11 +902,13 @@ def ejecutar_importacion_horarios():
         insertados.append(f'{clase_n} {dia} {hora} → {asig.nombre} / {prof.nombre}')
 
     db.session.commit()
+    slots_sync = _sincronizar_horario_profesores()
     return jsonify({
         'insertados': len(insertados),
         'profesores_creados': list(set(creados)),
         'errores': errores,
         'detalle': insertados,
+        'slots_sync': slots_sync,
     })
 
 

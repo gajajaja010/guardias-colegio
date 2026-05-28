@@ -8,6 +8,9 @@
     <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalImportarHorario">
       <i class="bi bi-calendar-check me-2"></i>Importar horarios manuales
     </button>
+    <button class="btn btn-outline-secondary" id="btnSync" onclick="sincronizarHorarios()" title="Recalcula el horario personal de cada profesor desde los horarios importados">
+      <i class="bi bi-arrow-repeat me-1"></i>Sincronizar horarios
+    </button>
     <a href="{{ url_for('nuevo_profesor') }}" class="btn btn-primary">
       <i class="bi bi-person-plus me-2"></i>Añadir profesor
     </a>
@@ -58,12 +61,13 @@ function ejecutarImportacion() {
       res.classList.remove('d-none');
       const sum = document.getElementById('importSummary');
       const errCount = data.errores ? data.errores.length : 0;
+      const syncMsg = data.slots_sync ? ` Horarios de profesores sincronizados: ${data.slots_sync} slots.` : '';
       if (errCount === 0) {
         sum.className = 'alert alert-success mb-2';
-        sum.innerHTML = `<i class="bi bi-check-circle me-2"></i><strong>${data.insertados} slots insertados correctamente.</strong>${data.profesores_creados && data.profesores_creados.length ? ' Profesores creados: ' + data.profesores_creados.join(', ') + '.' : ''}`;
+        sum.innerHTML = `<i class="bi bi-check-circle me-2"></i><strong>${data.insertados} slots insertados correctamente.</strong>${data.profesores_creados && data.profesores_creados.length ? ' Profesores creados: ' + data.profesores_creados.join(', ') + '.' : ''}${syncMsg}`;
       } else {
         sum.className = 'alert alert-warning mb-2';
-        sum.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i><strong>${data.insertados} slots insertados, ${errCount} errores.</strong>${data.profesores_creados && data.profesores_creados.length ? ' Profesores creados: ' + data.profesores_creados.join(', ') + '.' : ''}`;
+        sum.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i><strong>${data.insertados} slots insertados, ${errCount} errores.</strong>${data.profesores_creados && data.profesores_creados.length ? ' Profesores creados: ' + data.profesores_creados.join(', ') + '.' : ''}${syncMsg}`;
         const errDiv = document.getElementById('importErrors');
         errDiv.classList.remove('d-none');
         const errList = document.getElementById('importErrorList');
@@ -77,6 +81,30 @@ function ejecutarImportacion() {
       alert('Error: ' + e);
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Ejecutar importación';
+    });
+}
+
+function sincronizarHorarios() {
+  const btn = document.getElementById('btnSync');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sincronizando...';
+  fetch('{{ url_for("sincronizar_horario_profesores") }}', {method: 'POST'})
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Sincronizar horarios';
+      if (data.ok) {
+        const div = document.createElement('div');
+        div.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 end-0 m-3';
+        div.innerHTML = `<i class="bi bi-check-circle me-2"></i>Horarios sincronizados: ${data.slots} franjas actualizadas. <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 4000);
+      }
+    })
+    .catch(e => {
+      alert('Error: ' + e);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Sincronizar horarios';
     });
 }
 </script>
