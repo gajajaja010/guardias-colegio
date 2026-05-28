@@ -1364,6 +1364,18 @@ def guardias():
     return render_template('guardias.html', guardias=lista)
 
 
+@app.route('/guardia/<int:id>/eliminar', methods=['POST'])
+@login_required
+def eliminar_guardia(id):
+    if not current_user.es_admin:
+        abort(403)
+    g = Guardia.query.get_or_404(id)
+    db.session.delete(g)
+    db.session.commit()
+    flash('Guardia eliminada.', 'success')
+    return redirect(url_for('guardias'))
+
+
 @app.route('/guardias/nueva', methods=['GET', 'POST'])
 @login_required
 def nueva_guardia():
