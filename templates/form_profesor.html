@@ -31,7 +31,7 @@
             <input type="email" name="email" class="form-control"
               value="{{ profesor.email if profesor else '' }}"
               placeholder="nombre@laasunciondonostia.com"
-              {{ 'readonly' if profesor else '' }}>
+              {{ 'readonly' if (profesor and not current_user.es_admin) else '' }}>
           </div>
 
           <div class="row">

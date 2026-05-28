@@ -678,6 +678,16 @@ def editar_profesor(id):
         return redirect(url_for('profesores'))
     if request.method == 'POST':
         p.nombre = request.form.get('nombre', '').strip()
+        if current_user.es_admin:
+            nuevo_email = request.form.get('email', '').strip().lower()
+            if nuevo_email and nuevo_email != p.email:
+                if Profesor.query.filter(Profesor.email == nuevo_email, Profesor.id != p.id).first():
+                    flash('Ya existe un profesor con ese email.', 'danger')
+                    cursos = Curso.query.order_by(Curso.orden, Curso.nombre).all()
+                    grupos = GrupoTrabajo.query.order_by(GrupoTrabajo.nombre).all()
+                    grupos_prof = {m.grupo_id: m.horas_semanales for m in p.grupos}
+                    return render_template('form_profesor.html', profesor=p, cursos=cursos, grupos=grupos, grupos_prof=grupos_prof)
+                p.email = nuevo_email
         p.etapa = json.dumps(request.form.getlist('etapas'))
         p.aula_tutoria = request.form.get('aula_tutoria', '').strip() or None
         p.aulas_bloqueadas = json.dumps(request.form.getlist('aulas_bloqueadas'))
