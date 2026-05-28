@@ -551,6 +551,317 @@ def _auto_asignar_asignaturas(profesor):
         db.session.add(ProfesorAsignatura(profesor_id=profesor.id, asignatura_id=asig_id))
 
 
+@app.route('/admin/ejecutar-importacion-horarios', methods=['POST'])
+@login_required
+def ejecutar_importacion_horarios():
+    if not current_user.es_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+
+    import unicodedata
+
+    def norm(s):
+        s = s.lower().strip()
+        return ''.join(c for c in unicodedata.normalize('NFD', s)
+                       if unicodedata.category(c) != 'Mn')
+
+    # Abreviaciones de profesor → nombre completo en la BD
+    PROF_MAP = {
+        'jaione': 'Jaione Azpeitia',
+        'karmele': 'Karmele Aranzasti', 'karmel': 'Karmele Aranzasti',
+        'noelia': 'Noelia', 'noe': 'Noelia',
+        'kristina': 'Kristina', 'kris': 'Kristina', 'kri': 'Kristina',
+        'maria': 'María Mediavilla', 'maría': 'María Mediavilla', 'maria m': 'María Mediavilla',
+        'natalia': 'Natalia', 'natali': 'Natalia', 'azk': 'Natalia', 'azku': 'Natalia',
+        'miriam': 'Miriam Gil', 'mg': 'Miriam Gil',
+        'imanol': 'Imanol Peña', 'im': 'Imanol Peña', 'ima': 'Imanol Peña', 'iman': 'Imanol Peña',
+        'eva': 'Eva Jiménez', 'ev': 'Eva Jiménez',
+        'iñigo': 'Iñigo', 'iñi': 'Iñigo', 'iñig': 'Iñigo',
+        'unai': 'Unai Gajate', 'ug': 'Unai Gajate',
+        'juanjo': 'Juanjo Basurto', 'jj': 'Juanjo Basurto',
+        'joseba': 'Joseba Arrieta', 'jos': 'Joseba Arrieta', 'joseb': 'Joseba Arrieta',
+        'jo': 'Joseba Arrieta', 'jose': 'Joseba Arrieta', 'arrieta': 'Joseba Arrieta',
+        'iri': 'Iriondo', 'irion': 'Iriondo', 'irio': 'Iriondo',
+        'asi': 'Asier',
+    }
+
+    # Abreviaciones de asignatura → nombre en la BD (fuzzy)
+    ASIG_MAP = {
+        'cea': 'CEA', 'crr': 'CRR', 'dee': 'DEE',
+        'reli': 'Religión', 'religi': 'Religión',
+        'english': 'Inglés', 'engl': 'Inglés',
+        'euskera': 'Euskera',
+        'mate': 'Matemáticas', 'mates': 'Matemáticas',
+        'inguru': 'Ingurune',
+        'lengua': 'Lengua',
+        'gh': 'Gizarte', 'gizarte': 'Gizarte',
+        'musika': 'Música', 'musica': 'Música',
+        'plastika': 'Plástica', 'plastica': 'Plástica',
+        'tutor': 'Tutoría', 'tutor.': 'Tutoría',
+        'frantsesa': 'Francés', 'frances': 'Francés', 'francés': 'Francés',
+        'baloreak': 'Baloreak', 'balore': 'Baloreak', 'balore.': 'Baloreak',
+        'irakur': 'Lectura', 'irakur.': 'Lectura', 'lectura': 'Lectura', 'lectur.': 'Lectura',
+    }
+
+    hora_franja = {
+        '9:00': '9:00-10:00', '10:00': '10:00-11:00',
+        '11:30': '11:30-12:30', '14:30': '14:30-15:30', '15:30': '15:30-16:30',
+    }
+
+    # Horarios extraídos de los horarios de clase
+    # (clase, dia, hora, asig_abrev, prof_abrev)
+    HORARIOS = [
+        # ── HH 3 URTE ──
+        ('HH 3 URTE','Lunes','9:00','CEA','JAIONE'), ('HH 3 URTE','Martes','9:00','CEA','JAIONE'),
+        ('HH 3 URTE','Miércoles','9:00','CEA','JAIONE'), ('HH 3 URTE','Jueves','9:00','CEA','JAIONE'),
+        ('HH 3 URTE','Viernes','9:00','CRR','JAIONE'),
+        ('HH 3 URTE','Lunes','10:00','RELI','KRIS'), ('HH 3 URTE','Martes','10:00','CRR','JAIONE'),
+        ('HH 3 URTE','Miércoles','10:00','DEE','JAIONE'), ('HH 3 URTE','Jueves','10:00','ENGLISH','NOE'),
+        ('HH 3 URTE','Viernes','10:00','CRR','JAIONE'),
+        ('HH 3 URTE','Lunes','11:30','DEE','JAIONE'), ('HH 3 URTE','Martes','11:30','ENGLISH','NOE'),
+        ('HH 3 URTE','Miércoles','11:30','CEA','JAIONE'), ('HH 3 URTE','Jueves','11:30','CRR','JAIONE'),
+        ('HH 3 URTE','Viernes','11:30','RELI','KRIS'),
+        ('HH 3 URTE','Lunes','14:30','CRR','JAIONE'), ('HH 3 URTE','Martes','14:30','CRR','JAIONE'),
+        ('HH 3 URTE','Miércoles','14:30','CRR','JAIONE'), ('HH 3 URTE','Jueves','14:30','CRR','JAIONE'),
+        ('HH 3 URTE','Viernes','14:30','CEA','JAIONE'),
+        ('HH 3 URTE','Lunes','15:30','CRR','JAIONE'), ('HH 3 URTE','Martes','15:30','CRR','JAIONE'),
+        ('HH 3 URTE','Miércoles','15:30','CRR','JAIONE'), ('HH 3 URTE','Jueves','15:30','CRR','JAIONE'),
+        ('HH 3 URTE','Viernes','15:30','DEE','JAIONE'),
+        # ── HH 4 URTE ──
+        ('HH 4 URTE','Lunes','9:00','CRR','MARIA'), ('HH 4 URTE','Martes','9:00','CEA','NATALIA'),
+        ('HH 4 URTE','Miércoles','9:00','CRR','MARIA'), ('HH 4 URTE','Jueves','9:00','CRR','MARIA'),
+        ('HH 4 URTE','Viernes','9:00','CEA','NATALIA'),
+        ('HH 4 URTE','Lunes','10:00','CRR','MARIA'), ('HH 4 URTE','Martes','10:00','CEA','NATALIA'),
+        ('HH 4 URTE','Miércoles','10:00','CRR','MARIA'), ('HH 4 URTE','Jueves','10:00','CRR','MARIA'),
+        ('HH 4 URTE','Viernes','10:00','DEE','NATALIA'),
+        ('HH 4 URTE','Lunes','11:30','ENGLISH','NOE'), ('HH 4 URTE','Martes','11:30','CEA','NATALIA'),
+        ('HH 4 URTE','Miércoles','11:30','CEA','NATALIA'), ('HH 4 URTE','Jueves','11:30','DEE','NATALIA'),
+        ('HH 4 URTE','Viernes','11:30','ENGLISH','NOE'),
+        ('HH 4 URTE','Lunes','14:30','CRR','MARIA'), ('HH 4 URTE','Martes','14:30','CRR','MARIA'),
+        ('HH 4 URTE','Miércoles','14:30','CRR','MARIA'), ('HH 4 URTE','Jueves','14:30','CRR','MARIA'),
+        ('HH 4 URTE','Viernes','14:30','DEE','MARIA'),
+        ('HH 4 URTE','Lunes','15:30','CRR','MARIA'), ('HH 4 URTE','Martes','15:30','RELI','KRIS'),
+        ('HH 4 URTE','Miércoles','15:30','RELI','KRIS'), ('HH 4 URTE','Jueves','15:30','CRR','MARIA'),
+        ('HH 4 URTE','Viernes','15:30','CRR','MARIA'),
+        # ── HH 5 URTE ──
+        ('HH 5 URTE','Lunes','9:00','CEA','KARMELE'), ('HH 5 URTE','Martes','9:00','CEA','KARMELE'),
+        ('HH 5 URTE','Miércoles','9:00','CEA','KARMELE'), ('HH 5 URTE','Jueves','9:00','DEE','KARMELE'),
+        ('HH 5 URTE','Viernes','9:00','CEA','KARMELE'),
+        ('HH 5 URTE','Lunes','10:00','CRR','KARMELE'), ('HH 5 URTE','Martes','10:00','CRR','KARMELE'),
+        ('HH 5 URTE','Miércoles','10:00','DEE','KARMELE'), ('HH 5 URTE','Jueves','10:00','CRR','KARMELE'),
+        ('HH 5 URTE','Viernes','10:00','CRR','KARMELE'),
+        ('HH 5 URTE','Lunes','11:30','RELI','KRISTINA'), ('HH 5 URTE','Martes','11:30','CRR','KARMELE'),
+        ('HH 5 URTE','Miércoles','11:30','CEA','KARMELE'), ('HH 5 URTE','Jueves','11:30','CRR','KARMELE'),
+        ('HH 5 URTE','Viernes','11:30','CRR','KARMELE'),
+        ('HH 5 URTE','Lunes','14:30','CRR','KARMELE'), ('HH 5 URTE','Martes','14:30','ENGLISH','NOE'),
+        ('HH 5 URTE','Miércoles','14:30','RELI','KRISTINA'), ('HH 5 URTE','Jueves','14:30','CRR','KARMELE'),
+        ('HH 5 URTE','Viernes','14:30','ENGLISH','NOE'),
+        ('HH 5 URTE','Lunes','15:30','CRR','KARMELE'), ('HH 5 URTE','Martes','15:30','CRR','KARMELE'),
+        ('HH 5 URTE','Miércoles','15:30','CRR','KARMELE'), ('HH 5 URTE','Jueves','15:30','DEE','KARMELE'),
+        ('HH 5 URTE','Viernes','15:30','CEA','KARMELE'),
+        # ── LH 1.A ──
+        ('LH 1.A','Lunes','9:00','EUSKERA','EVA'), ('LH 1.A','Martes','9:00','EUSKERA','EVA'),
+        ('LH 1.A','Miércoles','9:00','ENGLISH','AZK'), ('LH 1.A','Jueves','9:00','MATE','EVA'),
+        ('LH 1.A','Viernes','9:00','MATE','EVA'),
+        ('LH 1.A','Lunes','10:00','ENGLISH','AZK'), ('LH 1.A','Martes','10:00','LENGUA','KRIS'),
+        ('LH 1.A','Miércoles','10:00','EUSKERA','EVA'), ('LH 1.A','Jueves','10:00','ENGLISH','AZK'),
+        ('LH 1.A','Viernes','10:00','INGURU','KRIS'),
+        ('LH 1.A','Lunes','11:30','GH','IÑIGO'), ('LH 1.A','Martes','11:30','INGURU','KRIS'),
+        ('LH 1.A','Miércoles','11:30','LENGUA','MARIA'), ('LH 1.A','Jueves','11:30','LENGUA','KRIS'),
+        ('LH 1.A','Viernes','11:30','GH','IÑIGO'),
+        ('LH 1.A','Lunes','14:30','LENGUA','KRIS'), ('LH 1.A','Martes','14:30','RELI','KRIS'),
+        ('LH 1.A','Miércoles','14:30','MATE','EVA'), ('LH 1.A','Jueves','14:30','INGURU','KRIS'),
+        ('LH 1.A','Viernes','14:30','EUSKERA','EVA'),
+        ('LH 1.A','Lunes','15:30','MUSIKA','KRIS'), ('LH 1.A','Martes','15:30','MATE','EVA'),
+        ('LH 1.A','Miércoles','15:30','PLASTIKA','EVA'), ('LH 1.A','Jueves','15:30','RELI','KRIS'),
+        ('LH 1.A','Viernes','15:30','TUTOR','EVA'),
+        # ── LH 2.A ──
+        ('LH 2.A','Lunes','9:00','EUSKERA','MG'), ('LH 2.A','Martes','9:00','EUSKERA','MG'),
+        ('LH 2.A','Miércoles','9:00','MUSIKA','KRIS'), ('LH 2.A','Jueves','9:00','ENGLISH','AZK'),
+        ('LH 2.A','Viernes','9:00','MATE','MG'),
+        ('LH 2.A','Lunes','10:00','GH','ARRIETA'), ('LH 2.A','Martes','10:00','MATE','MG'),
+        ('LH 2.A','Miércoles','10:00','ENGLISH','AZK'), ('LH 2.A','Jueves','10:00','EUSKERA','MG'),
+        ('LH 2.A','Viernes','10:00','GH','ARRIETA'),
+        ('LH 2.A','Lunes','11:30','ENGLISH','AZK'), ('LH 2.A','Martes','11:30','LENGUA','EVA'),
+        ('LH 2.A','Miércoles','11:30','LENGUA','EVA'), ('LH 2.A','Jueves','11:30','RELI','MARIA'),
+        ('LH 2.A','Viernes','11:30','PLASTIKA','AZK'),
+        ('LH 2.A','Lunes','14:30','MATE','MG'), ('LH 2.A','Martes','14:30','INGURU','MG'),
+        ('LH 2.A','Miércoles','14:30','MATE','MG'), ('LH 2.A','Jueves','14:30','LENGUA','EVA'),
+        ('LH 2.A','Viernes','14:30','INGURU','MG'),
+        ('LH 2.A','Lunes','15:30','LENGUA','EVA'), ('LH 2.A','Martes','15:30','INGURU','MG'),
+        ('LH 2.A','Miércoles','15:30','RELI','MARIA'), ('LH 2.A','Jueves','15:30','GH','ARRIETA'),
+        ('LH 2.A','Viernes','15:30','TUTOR','MG'),
+        # ── LH 3.A ──
+        ('LH 3.A','Lunes','9:00','EUSKERA','UNAI'), ('LH 3.A','Martes','9:00','EUSKERA','UG'),
+        ('LH 3.A','Miércoles','9:00','ENGLISH','EVA'), ('LH 3.A','Jueves','9:00','EUSKERA','UG'),
+        ('LH 3.A','Viernes','9:00','EUSKERA','UG'),
+        ('LH 3.A','Lunes','10:00','MATE','UNAI'), ('LH 3.A','Martes','10:00','MATE','UNAI'),
+        ('LH 3.A','Miércoles','10:00','RELI','ARRIETA'), ('LH 3.A','Jueves','10:00','MATE','UNAI'),
+        ('LH 3.A','Viernes','10:00','LENGUA','IMA'),
+        ('LH 3.A','Lunes','11:30','PLASTIKA','EVA'), ('LH 3.A','Martes','11:30','INGURU','UG'),
+        ('LH 3.A','Miércoles','11:30','MATE','UNAI'), ('LH 3.A','Jueves','11:30','LENGUA','IMA'),
+        ('LH 3.A','Viernes','11:30','GH','UNAI'),
+        ('LH 3.A','Lunes','14:30','RELI','ARRIETA'), ('LH 3.A','Martes','14:30','ENGLISH','EVA'),
+        ('LH 3.A','Miércoles','14:30','INGURU','UNAI'), ('LH 3.A','Jueves','14:30','INGURU','UG'),
+        ('LH 3.A','Viernes','14:30','MUSIKA','KRIS'),
+        ('LH 3.A','Lunes','15:30','LENGUA','IMA'), ('LH 3.A','Martes','15:30','GH','UNAI'),
+        ('LH 3.A','Miércoles','15:30','INGURU','UNAI'), ('LH 3.A','Jueves','15:30','ENGLISH','EVA'),
+        ('LH 3.A','Viernes','15:30','TUTOR','UNAI'),
+        # ── LH 4.A ──
+        ('LH 4.A','Lunes','9:00','EUSKERA','IM'), ('LH 4.A','Martes','9:00','EUSKERA','IM'),
+        ('LH 4.A','Miércoles','9:00','INGURU','UNAI'), ('LH 4.A','Jueves','9:00','MATE','IMA'),
+        ('LH 4.A','Viernes','9:00','MATE','IMA'),
+        ('LH 4.A','Lunes','10:00','ENGLISH','EVA'), ('LH 4.A','Martes','10:00','LENGUA','IÑIG'),
+        ('LH 4.A','Miércoles','10:00','MUSIKA','KRIS'), ('LH 4.A','Jueves','10:00','ENGLISH','EVA'),
+        ('LH 4.A','Viernes','10:00','LENGUA','IÑI'),
+        ('LH 4.A','Lunes','11:30','MATE','IMANOL'), ('LH 4.A','Martes','11:30','MATE','IMAN'),
+        ('LH 4.A','Miércoles','11:30','RELI','MIRIAM'), ('LH 4.A','Jueves','11:30','LENGUA','IÑIG'),
+        ('LH 4.A','Viernes','11:30','ENGLISH','EV'),
+        ('LH 4.A','Lunes','14:30','INGURU','UNAI'), ('LH 4.A','Martes','14:30','PLASTIKA','IM'),
+        ('LH 4.A','Miércoles','14:30','EUSKERA','IMA'), ('LH 4.A','Jueves','14:30','RELI','MIRIAM'),
+        ('LH 4.A','Viernes','14:30','GH','IMANOL'),
+        ('LH 4.A','Lunes','15:30','INGURU','UNAI'), ('LH 4.A','Martes','15:30','GH','IMA'),
+        ('LH 4.A','Miércoles','15:30','LENGUA','IÑIGO'), ('LH 4.A','Jueves','15:30','EUSKERA','IM'),
+        ('LH 4.A','Viernes','15:30','TUTOR','IMA'),
+        # ── LH 5.A ──
+        ('LH 5.A','Lunes','9:00','MATE','JJ'), ('LH 5.A','Martes','9:00','MATE','JJ'),
+        ('LH 5.A','Miércoles','9:00','ENGLISH','JJ'), ('LH 5.A','Jueves','9:00','LENGUA','IÑI'),
+        ('LH 5.A','Viernes','9:00','MUSIKA','KRIS'),
+        ('LH 5.A','Lunes','10:00','INGURU','JJ'), ('LH 5.A','Martes','10:00','FRANCÉS','IM'),
+        ('LH 5.A','Miércoles','10:00','EUSKERA','UNAI'), ('LH 5.A','Jueves','10:00','ENGLISH','JJ'),
+        ('LH 5.A','Viernes','10:00','EUSKERA','UG'),
+        ('LH 5.A','Lunes','11:30','RELI','MIRIAM'), ('LH 5.A','Martes','11:30','INGURU','JJ'),
+        ('LH 5.A','Miércoles','11:30','LENGUA','IÑIGO'), ('LH 5.A','Jueves','11:30','EUSKERA','UG'),
+        ('LH 5.A','Viernes','11:30','RELI','MIRIAM'),
+        ('LH 5.A','Lunes','14:30','LENGUA','IÑIGO'), ('LH 5.A','Martes','14:30','EUSKERA','UG'),
+        ('LH 5.A','Miércoles','14:30','INGURU','JJ'), ('LH 5.A','Jueves','14:30','PLASTIKA','IRI'),
+        ('LH 5.A','Viernes','14:30','GH','JUANJO'),
+        ('LH 5.A','Lunes','15:30','GH','JUANJO'), ('LH 5.A','Martes','15:30','LENGUA','IÑIG'),
+        ('LH 5.A','Miércoles','15:30','INGURU','JJ'), ('LH 5.A','Jueves','15:30','MATE','JJ'),
+        ('LH 5.A','Viernes','15:30','TUTOR','JJ'),
+        # ── LH 6.A ──
+        ('LH 6.A','Lunes','9:00','EUSKERA','JOS'), ('LH 6.A','Martes','9:00','LENGUA','IÑIG'),
+        ('LH 6.A','Miércoles','9:00','MATE','JOSE'), ('LH 6.A','Jueves','9:00','EUSKERA','JOS'),
+        ('LH 6.A','Viernes','9:00','EUSKERA','JO'),
+        ('LH 6.A','Lunes','10:00','LENGUA','IÑIG'), ('LH 6.A','Martes','10:00','MATE','JOSEB'),
+        ('LH 6.A','Miércoles','10:00','ENGLISH','IRION'), ('LH 6.A','Jueves','10:00','MUSIKA','KRIS'),
+        ('LH 6.A','Viernes','10:00','RELI','MIRIAM'),
+        ('LH 6.A','Lunes','11:30','INGURU','JOSEB'), ('LH 6.A','Martes','11:30','EUSKERA','JO'),
+        ('LH 6.A','Miércoles','11:30','BALOREAK','JOSEB'), ('LH 6.A','Jueves','11:30','RELI','MIRIAM'),
+        ('LH 6.A','Viernes','11:30','ENGLISH','IRI'),
+        ('LH 6.A','Lunes','14:30','FRANTSESA','IM'), ('LH 6.A','Martes','14:30','INGURU','JO'),
+        ('LH 6.A','Miércoles','14:30','PLASTIKA','JOSE'), ('LH 6.A','Jueves','14:30','LENGUA','IÑI'),
+        ('LH 6.A','Viernes','14:30','GH','JOSEBA'),
+        ('LH 6.A','Lunes','15:30','BALOREAK','JOSE'), ('LH 6.A','Martes','15:30','INGURU','JO'),
+        ('LH 6.A','Miércoles','15:30','GH','JOSEBA'), ('LH 6.A','Jueves','15:30','ENGLISH','IRIO'),
+        ('LH 6.A','Viernes','15:30','TUTOR','JOS'),
+    ]
+
+    # Construir índices de BD (búsqueda por nombre normalizado)
+    cursos_db = {norm(c.nombre): c for c in Curso.query.all()}
+    asigs_db = {}
+    for a in Asignatura.query.all():
+        asigs_db[norm(a.nombre)] = a
+
+    profs_db = {}
+    for p in Profesor.query.all():
+        profs_db[norm(p.nombre)] = p
+        # también indexar por primera palabra (nombre)
+        first = norm(p.nombre).split()[0]
+        if first not in profs_db:
+            profs_db[first] = p
+
+    def find_curso(nombre):
+        n = norm(nombre)
+        if n in cursos_db:
+            return cursos_db[n]
+        for k, v in cursos_db.items():
+            if n in k or k in n:
+                return v
+        return None
+
+    def find_asig(abrev):
+        target_name = ASIG_MAP.get(norm(abrev), abrev)
+        tn = norm(target_name)
+        if tn in asigs_db:
+            return asigs_db[tn]
+        for k, v in asigs_db.items():
+            if tn in k or k in tn:
+                return v
+        return None
+
+    def find_or_create_prof(abrev):
+        full_name = PROF_MAP.get(norm(abrev))
+        if not full_name:
+            full_name = abrev.title()
+        fn = norm(full_name)
+        # buscar por nombre completo normalizado
+        if fn in profs_db:
+            return profs_db[fn]
+        # buscar por primera palabra
+        first = fn.split()[0]
+        if first in profs_db:
+            return profs_db[first]
+        # buscar parcial
+        for k, v in profs_db.items():
+            if first in k:
+                return v
+        # Crear nuevo profesor
+        email_base = fn.replace(' ', '') + '@laasuncion.temp'
+        prof = Profesor(nombre=full_name, email=email_base,
+                        etapa='[]', aulas_bloqueadas='[]', materias_especiales='[]')
+        db.session.add(prof)
+        db.session.flush()
+        profs_db[fn] = prof
+        profs_db[fn.split()[0]] = prof
+        return prof
+
+    insertados, errores, creados = [], [], []
+
+    for clase_n, dia, hora, asig_abrev, prof_abrev in HORARIOS:
+        franja = hora_franja.get(hora)
+        if not franja:
+            errores.append(f'Hora desconocida: {hora}')
+            continue
+
+        curso = find_curso(clase_n)
+        if not curso:
+            errores.append(f'Clase no encontrada: {clase_n}')
+            continue
+
+        asig = find_asig(asig_abrev)
+        if not asig:
+            errores.append(f'Asignatura no encontrada: {asig_abrev} (en {clase_n} {dia} {hora})')
+            continue
+
+        prev_count = len(profs_db)
+        prof = find_or_create_prof(prof_abrev)
+        if len(profs_db) > prev_count:
+            creados.append(prof.nombre)
+
+        # Insertar o actualizar
+        existing = HorarioAsignacion.query.filter_by(
+            curso_id=curso.id, dia=dia, franja=franja
+        ).first()
+        if existing:
+            existing.asignatura_id = asig.id
+            existing.profesor_id = prof.id
+            existing.es_manual = True
+        else:
+            db.session.add(HorarioAsignacion(
+                curso_id=curso.id, asignatura_id=asig.id,
+                profesor_id=prof.id, dia=dia, franja=franja, es_manual=True
+            ))
+        insertados.append(f'{clase_n} {dia} {hora} → {asig.nombre} / {prof.nombre}')
+
+    db.session.commit()
+    return jsonify({
+        'insertados': len(insertados),
+        'profesores_creados': list(set(creados)),
+        'errores': errores,
+        'detalle': insertados,
+    })
+
+
 @app.route('/admin/dump-datos')
 @login_required
 def dump_datos():
