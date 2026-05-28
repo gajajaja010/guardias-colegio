@@ -870,8 +870,7 @@ def dump_datos():
     profesores = [{'id': p.id, 'nombre': p.nombre} for p in Profesor.query.order_by(Profesor.nombre).all()]
     cursos = [{'id': c.id, 'nombre': c.nombre} for c in Curso.query.order_by(Curso.nombre).all()]
     asignaturas = [{'id': a.id, 'nombre': a.nombre} for a in Asignatura.query.order_by(Asignatura.nombre).all()]
-    franjas = [{'id': f.id, 'hora': f.hora, 'nombre': f.nombre} for f in FranjaHoraria.query.order_by(FranjaHoraria.hora).all()]
-    return jsonify({'profesores': profesores, 'cursos': cursos, 'asignaturas': asignaturas, 'franjas': franjas})
+    return jsonify({'profesores': profesores, 'cursos': cursos, 'asignaturas': asignaturas})
 
 
 @app.route('/profesores')
