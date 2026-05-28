@@ -4,10 +4,82 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3 class="fw-bold mb-0"><i class="bi bi-people me-2 text-primary"></i>Profesores</h3>
   {% if current_user.es_admin %}
-  <a href="{{ url_for('nuevo_profesor') }}" class="btn btn-primary">
-    <i class="bi bi-person-plus me-2"></i>Añadir profesor
-  </a>
+  <div class="d-flex gap-2">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalImportarHorario">
+      <i class="bi bi-calendar-check me-2"></i>Importar horarios manuales
+    </button>
+    <a href="{{ url_for('nuevo_profesor') }}" class="btn btn-primary">
+      <i class="bi bi-person-plus me-2"></i>Añadir profesor
+    </a>
+  </div>
   {% endif %}
+
+<!-- Modal importar horarios -->
+<div class="modal fade" id="modalImportarHorario" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-calendar-check me-2"></i>Importar horarios manuales</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Importa los 225 slots de horario manual extraídos de los horarios de las 9 clases (HH 3-5 URTE y LH 1-6.A). Los registros existentes se sobreescriben. Iriondo y Asier se crean si no existen.</p>
+        <div id="importResult" class="d-none">
+          <div id="importSummary" class="alert mb-2"></div>
+          <div id="importErrors" class="d-none">
+            <p class="fw-bold text-danger mb-1">Errores:</p>
+            <ul id="importErrorList" class="small text-danger"></ul>
+          </div>
+          <details class="small">
+            <summary class="text-muted" style="cursor:pointer">Ver detalle completo</summary>
+            <pre id="importDetail" class="mt-2 p-2 bg-light rounded" style="max-height:300px;overflow-y:auto;font-size:.75rem;"></pre>
+          </details>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-success" id="btnEjecutarImport" onclick="ejecutarImportacion()">
+          <i class="bi bi-play-fill me-1"></i>Ejecutar importación
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function ejecutarImportacion() {
+  const btn = document.getElementById('btnEjecutarImport');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importando...';
+  fetch('{{ url_for("ejecutar_importacion_horarios") }}', {method: 'POST'})
+    .then(r => r.json())
+    .then(data => {
+      const res = document.getElementById('importResult');
+      res.classList.remove('d-none');
+      const sum = document.getElementById('importSummary');
+      const errCount = data.errores ? data.errores.length : 0;
+      if (errCount === 0) {
+        sum.className = 'alert alert-success mb-2';
+        sum.innerHTML = `<i class="bi bi-check-circle me-2"></i><strong>${data.insertados} slots insertados correctamente.</strong>${data.profesores_creados && data.profesores_creados.length ? ' Profesores creados: ' + data.profesores_creados.join(', ') + '.' : ''}`;
+      } else {
+        sum.className = 'alert alert-warning mb-2';
+        sum.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i><strong>${data.insertados} slots insertados, ${errCount} errores.</strong>${data.profesores_creados && data.profesores_creados.length ? ' Profesores creados: ' + data.profesores_creados.join(', ') + '.' : ''}`;
+        const errDiv = document.getElementById('importErrors');
+        errDiv.classList.remove('d-none');
+        const errList = document.getElementById('importErrorList');
+        errList.innerHTML = data.errores.map(e => `<li>${e}</li>`).join('');
+      }
+      document.getElementById('importDetail').textContent = data.detalle ? data.detalle.join('\n') : '';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Ejecutar de nuevo';
+    })
+    .catch(e => {
+      alert('Error: ' + e);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Ejecutar importación';
+    });
+}
+</script>
 </div>
 
 <div class="card">
