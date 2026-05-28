@@ -551,6 +551,18 @@ def _auto_asignar_asignaturas(profesor):
         db.session.add(ProfesorAsignatura(profesor_id=profesor.id, asignatura_id=asig_id))
 
 
+@app.route('/admin/dump-datos')
+@login_required
+def dump_datos():
+    if not current_user.es_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+    profesores = [{'id': p.id, 'nombre': p.nombre} for p in Profesor.query.order_by(Profesor.nombre).all()]
+    cursos = [{'id': c.id, 'nombre': c.nombre} for c in Curso.query.order_by(Curso.nombre).all()]
+    asignaturas = [{'id': a.id, 'nombre': a.nombre} for a in Asignatura.query.order_by(Asignatura.nombre).all()]
+    franjas = [{'id': f.id, 'hora': f.hora, 'nombre': f.nombre} for f in FranjaHoraria.query.order_by(FranjaHoraria.hora).all()]
+    return jsonify({'profesores': profesores, 'cursos': cursos, 'asignaturas': asignaturas, 'franjas': franjas})
+
+
 @app.route('/profesores')
 @login_required
 def profesores():
