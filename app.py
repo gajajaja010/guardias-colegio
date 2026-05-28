@@ -124,17 +124,26 @@ class Profesor(UserMixin, db.Model):
             return 0
         return round((self.total_guardias / esperado) * 100, 1)
 
-    def esta_libre_en(self, dia, franja):
+    def esta_libre_en(self, dia, franja, fecha=None):
         horario = HorarioProfesor.query.filter_by(
             profesor_id=self.id, dia=dia, franja=franja, tiene_clase=True
         ).first()
         if horario:
             return False
-        indisponible = Indisponibilidad.query.filter_by(
-            profesor_id=self.id, dia=dia, franja=franja, activa=True
+        # Bloqueo recurrente semanal
+        ind = Indisponibilidad.query.filter_by(
+            profesor_id=self.id, dia=dia, franja=franja, activa=True, recurrente=True
         ).first()
-        if indisponible:
+        if ind:
             return False
+        # Bloqueo puntual por fecha específica
+        if fecha is not None:
+            ind_esp = Indisponibilidad.query.filter_by(
+                profesor_id=self.id, franja=franja, fecha_especifica=fecha,
+                activa=True, recurrente=False
+            ).first()
+            if ind_esp:
+                return False
         return True
 
 
@@ -371,7 +380,7 @@ def buscar_profesor_para_guardia(dia, franja, excluir_id, aula=None, etapa_ausen
         fecha = date.today()
 
     def puede_cubrir(p):
-        if p.id == excluir_id or not p.esta_libre_en(dia, franja):
+        if p.id == excluir_id or not p.esta_libre_en(dia, franja, fecha=fecha):
             return False
         if aula:
             bloqueadas = json.loads(p.aulas_bloqueadas or '[]')
@@ -502,6 +511,9 @@ def dashboard():
     mis_guardias_pendientes = Guardia.query.filter_by(
         profesor_asignado_id=current_user.id, completada=False
     ).order_by(Guardia.fecha).limit(5).all()
+    guardias_por_aceptar = Guardia.query.filter_by(
+        profesor_asignado_id=current_user.id, estado='pendiente', completada=False
+    ).count()
     total_profesores = Profesor.query.filter_by(activo=True, de_baja=False).count()
     de_baja = Profesor.query.filter_by(de_baja=True).count()
     guardias_mes = Guardia.query.filter(
@@ -510,6 +522,7 @@ def dashboard():
     return render_template('dashboard.html',
         guardias_hoy=guardias_hoy,
         mis_guardias=mis_guardias_pendientes,
+        guardias_por_aceptar=guardias_por_aceptar,
         total_profesores=total_profesores,
         de_baja=de_baja,
         guardias_mes=guardias_mes,
@@ -1099,7 +1112,15 @@ def mi_horario():
                 'indisponible': ind is not None,
                 'motivo_ind': ind.motivo if ind else ''
             }
-    return render_template('mi_horario.html', horario=horario, dias=DIAS_SEMANA, franjas=FRANJAS)
+    hoy = date.today()
+    bloqueos_fecha = Indisponibilidad.query.filter(
+        Indisponibilidad.profesor_id == current_user.id,
+        Indisponibilidad.recurrente == False,
+        Indisponibilidad.activa == True,
+        Indisponibilidad.fecha_especifica >= hoy
+    ).order_by(Indisponibilidad.fecha_especifica).all()
+    return render_template('mi_horario.html', horario=horario, dias=DIAS_SEMANA, franjas=FRANJAS,
+                           bloqueos_fecha=bloqueos_fecha, hoy=hoy)
 
 
 @app.route('/mi-horario/guardar', methods=['POST'])
@@ -1399,6 +1420,90 @@ def accion_guardia(token):
                 return render_template('accion_guardia.html', accion='sin_cobertura', guardia=guardia)
     except Exception:
         return render_template('accion_guardia.html', accion='error', guardia=None)
+
+
+@app.route('/guardia/<int:id>/aceptar', methods=['POST'])
+@login_required
+def aceptar_guardia(id):
+    g = Guardia.query.get_or_404(id)
+    if g.profesor_asignado_id != current_user.id and not current_user.es_admin:
+        abort(403)
+    g.estado = 'confirmada'
+    db.session.commit()
+    flash('Guardia aceptada correctamente.', 'success')
+    return redirect(url_for('guardias'))
+
+
+@app.route('/guardia/<int:id>/rechazar-profesor', methods=['POST'])
+@login_required
+def rechazar_guardia_profesor(id):
+    g = Guardia.query.get_or_404(id)
+    if g.profesor_asignado_id != current_user.id and not current_user.es_admin:
+        abort(403)
+    g.estado = 'rechazada'
+    candidato_anterior_id = g.profesor_asignado_id
+    nuevo = buscar_profesor_para_guardia(
+        g.dia_semana, g.franja, candidato_anterior_id,
+        aula=g.aula,
+        etapa_ausente=g.profesor_ausente.etapa if g.profesor_ausente else None,
+        fecha=g.fecha
+    )
+    if nuevo and nuevo.id != candidato_anterior_id:
+        g.profesor_asignado_id = nuevo.id
+        g.estado = 'pendiente'
+        db.session.commit()
+        enviar_email_guardia(g)
+        flash(f'Guardia rechazada. Reasignada a {nuevo.nombre}.', 'info')
+    else:
+        g.estado = 'sin_cobertura'
+        db.session.commit()
+        flash('Guardia rechazada. No se encontró sustituto. La dirección la gestionará.', 'warning')
+    return redirect(url_for('guardias'))
+
+
+@app.route('/indisponibilidad/fecha/agregar', methods=['POST'])
+@login_required
+def agregar_bloqueo_fecha():
+    fecha_str = request.form.get('fecha')
+    franja = request.form.get('franja')
+    motivo = request.form.get('motivo', '').strip()
+    if not fecha_str or not franja:
+        flash('Fecha y franja son obligatorias.', 'danger')
+        return redirect(url_for('mi_horario'))
+    try:
+        fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    except ValueError:
+        flash('Fecha inválida.', 'danger')
+        return redirect(url_for('mi_horario'))
+    if fecha_obj.weekday() >= 5:
+        flash('No se pueden bloquear fines de semana.', 'danger')
+        return redirect(url_for('mi_horario'))
+    dia = DIAS_SEMANA[fecha_obj.weekday()]
+    ind = Indisponibilidad(
+        profesor_id=current_user.id,
+        dia=dia,
+        franja=franja,
+        motivo=motivo or 'Reunión',
+        recurrente=False,
+        fecha_especifica=fecha_obj,
+        activa=True
+    )
+    db.session.add(ind)
+    db.session.commit()
+    flash(f'Bloqueado {dia} {franja} el {fecha_obj.strftime("%d/%m/%Y")}.', 'success')
+    return redirect(url_for('mi_horario'))
+
+
+@app.route('/indisponibilidad/<int:id>/eliminar', methods=['POST'])
+@login_required
+def eliminar_bloqueo(id):
+    ind = Indisponibilidad.query.get_or_404(id)
+    if ind.profesor_id != current_user.id and not current_user.es_admin:
+        abort(403)
+    db.session.delete(ind)
+    db.session.commit()
+    flash('Bloqueo eliminado.', 'success')
+    return redirect(url_for('mi_horario'))
 
 
 # ───────────────────────────── IMPORTAR HORARIOS ─────────────────────────────

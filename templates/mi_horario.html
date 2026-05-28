@@ -93,8 +93,81 @@
 
 <div class="alert alert-info mt-3">
   <i class="bi bi-info-circle me-2"></i>
-  Este horario es <strong>semanal y recurrente</strong>. Si tienes un evento puntual que no se repite cada semana,
-  márcalo igualmente y luego elimínalo cuando pase.
+  Las celdas marcadas como <strong>No disponible</strong> bloquean esa franja <strong>cada semana</strong>.
+  Para bloquear un día concreto (p.ej. una reunión puntual), usa la sección de abajo.
+</div>
+
+<!-- Bloqueos por fecha específica -->
+<div class="card mt-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-calendar-x me-2 text-warning"></i><strong>Bloqueos puntuales</strong></span>
+    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="collapse" data-bs-target="#formBloqueo">
+      <i class="bi bi-plus-circle me-1"></i>Añadir bloqueo
+    </button>
+  </div>
+  <div class="collapse" id="formBloqueo">
+    <div class="card-body border-bottom">
+      <form method="POST" action="{{ url_for('agregar_bloqueo_fecha') }}" class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Fecha</label>
+          <input type="date" name="fecha" class="form-control form-control-sm" required
+            min="{{ hoy.strftime('%Y-%m-%d') }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Franja</label>
+          <select name="franja" class="form-select form-select-sm" required>
+            {% for f in franjas %}
+            <option value="{{ f }}">{{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-semibold">Motivo</label>
+          <input type="text" name="motivo" class="form-control form-control-sm"
+            placeholder="Reunión, formación...">
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-warning btn-sm w-100">Bloquear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    {% if bloqueos_fecha %}
+    <table class="table table-sm mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Fecha</th>
+          <th>Día</th>
+          <th>Franja</th>
+          <th>Motivo</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bloqueos_fecha %}
+        <tr>
+          <td>{{ b.fecha_especifica.strftime('%d/%m/%Y') }}</td>
+          <td>{{ b.dia }}</td>
+          <td><span class="badge bg-secondary">{{ b.franja }}</span></td>
+          <td>{{ b.motivo or '—' }}</td>
+          <td class="text-end">
+            <form method="POST" action="{{ url_for('eliminar_bloqueo', id=b.id) }}" class="d-inline">
+              <button class="btn btn-sm btn-outline-danger" title="Eliminar bloqueo">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-center text-muted py-3 small">
+      <i class="bi bi-calendar-check me-1"></i>No hay bloqueos puntuales activos
+    </div>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}
 

@@ -10,6 +10,17 @@
   {% endif %}
 </div>
 
+{% set mis_pendientes = guardias | selectattr('profesor_asignado_id', 'equalto', current_user.id) | selectattr('estado', 'equalto', 'pendiente') | list %}
+{% if mis_pendientes %}
+<div class="alert alert-warning d-flex align-items-center mb-3">
+  <i class="bi bi-bell-fill me-2 fs-5"></i>
+  <div>
+    <strong>Tienes {{ mis_pendientes|length }} guardia{% if mis_pendientes|length != 1 %}s{% endif %} pendiente{% if mis_pendientes|length != 1 %}s{% endif %} de aceptar.</strong>
+    Confirma o rechaza cada una en la tabla de abajo.
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="card-body p-0">
     {% if guardias %}
@@ -22,12 +33,12 @@
           <th>Cubre la guardia</th>
           <th>Aula</th>
           <th>Estado</th>
-          {% if current_user.es_admin %}<th></th>{% endif %}
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {% for g in guardias %}
-        <tr class="{% if g.estado == 'sin_cobertura' %}table-danger{% elif g.completada %}table-light{% endif %}">
+        <tr class="{% if g.estado == 'sin_cobertura' %}table-danger{% elif g.completada %}table-light{% elif g.profesor_asignado_id == current_user.id and g.estado == 'pendiente' %}table-warning{% endif %}">
           <td>
             <strong>{{ g.fecha.strftime('%d/%m/%Y') }}</strong>
             <div class="text-muted small">{{ g.dia_semana }}</div>
@@ -50,17 +61,27 @@
           <td>
             <span class="badge badge-{{ g.estado }}">{{ g.estado.replace('_', ' ') }}</span>
           </td>
-          {% if current_user.es_admin %}
-          <td>
-            {% if not g.completada and g.profesor_asignado %}
-            <form method="POST" action="{{ url_for('completar_guardia', id=g.id) }}">
+          <td class="text-end" style="white-space:nowrap">
+            {% if g.profesor_asignado_id == current_user.id and g.estado == 'pendiente' %}
+            <form method="POST" action="{{ url_for('aceptar_guardia', id=g.id) }}" class="d-inline">
+              <button class="btn btn-sm btn-success" title="Aceptar guardia">
+                <i class="bi bi-check-lg"></i> Aceptar
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('rechazar_guardia_profesor', id=g.id) }}" class="d-inline ms-1"
+              onsubmit="return confirm('¿Seguro que quieres rechazar esta guardia? El sistema buscará otro profesor.')">
+              <button class="btn btn-sm btn-outline-danger" title="Rechazar guardia">
+                <i class="bi bi-x-lg"></i> No puedo
+              </button>
+            </form>
+            {% elif current_user.es_admin and not g.completada and g.profesor_asignado %}
+            <form method="POST" action="{{ url_for('completar_guardia', id=g.id) }}" class="d-inline">
               <button class="btn btn-sm btn-outline-success" title="Marcar completada">
                 <i class="bi bi-check-lg"></i>
               </button>
             </form>
             {% endif %}
           </td>
-          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
