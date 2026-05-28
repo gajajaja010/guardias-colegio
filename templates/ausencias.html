@@ -62,13 +62,14 @@
           <th>Franjas</th>
           <th>Tipo</th>
           <th>Estado</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {% for a in ausencias %}
         <tr>
           <td><strong>{{ a.profesor.nombre }}</strong></td>
-          <td>{{ a.fecha_inicio.strftime('%d/%m/%Y') }}</td>
+          <td>{{ a.fecha_inicio.strftime('%d/%m/%Y') }}{% if a.fecha_fin %} – {{ a.fecha_fin.strftime('%d/%m/%Y') }}{% endif %}</td>
           <td>{{ a.motivo or '—' }}</td>
           <td>
             {% if a.franjas_afectadas == 'todas' %}
@@ -91,6 +92,19 @@
               <span class="badge bg-success">Aprobada</span>
             {% else %}
               <span class="badge bg-warning text-dark">Pendiente</span>
+            {% endif %}
+          </td>
+          <td class="text-end" style="white-space:nowrap">
+            {% if current_user.es_admin or a.profesor_id == current_user.id %}
+            <a href="{{ url_for('editar_ausencia', id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Editar">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="POST" action="{{ url_for('eliminar_ausencia', id=a.id) }}" class="d-inline ms-1"
+              onsubmit="return confirm('¿Eliminar esta ausencia?{% if a.aprobada %} También se eliminarán las guardias asignadas para esta fecha.{% endif %}\n\nEsta acción no se puede deshacer.')">
+              <button class="btn btn-sm btn-outline-danger" title="Eliminar">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
             {% endif %}
           </td>
         </tr>

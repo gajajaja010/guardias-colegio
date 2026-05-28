@@ -1306,7 +1306,55 @@ def nueva_ausencia():
         return redirect(url_for('ausencias'))
 
     profesores_lista = Profesor.query.filter_by(activo=True).order_by(Profesor.nombre).all() if current_user.es_admin else []
-    return render_template('form_ausencia.html', profesores=profesores_lista, franjas=FRANJAS, cfg=cfg)
+    return render_template('form_ausencia.html', ausencia=None, profesores=profesores_lista, franjas=FRANJAS,
+                           franjas_sel=[], cfg=cfg)
+
+
+@app.route('/ausencias/<int:id>/editar', methods=['GET', 'POST'])
+@login_required
+def editar_ausencia(id):
+    a = Ausencia.query.get_or_404(id)
+    if a.profesor_id != current_user.id and not current_user.es_admin:
+        abort(403)
+    cfg = get_config()
+    if request.method == 'POST':
+        a.fecha_inicio = datetime.strptime(request.form.get('fecha_inicio'), '%Y-%m-%d').date()
+        fecha_fin_str = request.form.get('fecha_fin', '')
+        a.fecha_fin = datetime.strptime(fecha_fin_str, '%Y-%m-%d').date() if fecha_fin_str else None
+        a.motivo = request.form.get('motivo', '').strip()
+        a.notas = request.form.get('notas', '').strip()
+        franjas_sel = request.form.getlist('franjas')
+        a.franjas_afectadas = json.dumps(franjas_sel) if franjas_sel else 'todas'
+        db.session.commit()
+        flash('Ausencia actualizada correctamente.', 'success')
+        return redirect(url_for('ausencias'))
+    profesores_lista = Profesor.query.filter_by(activo=True).order_by(Profesor.nombre).all() if current_user.es_admin else []
+    franjas_sel = json.loads(a.franjas_afectadas) if a.franjas_afectadas != 'todas' else []
+    return render_template('form_ausencia.html', ausencia=a, profesores=profesores_lista,
+                           franjas=FRANJAS, franjas_sel=franjas_sel, cfg=cfg)
+
+
+@app.route('/ausencias/<int:id>/eliminar', methods=['POST'])
+@login_required
+def eliminar_ausencia(id):
+    a = Ausencia.query.get_or_404(id)
+    if a.profesor_id != current_user.id and not current_user.es_admin:
+        abort(403)
+    fecha_fin = a.fecha_fin or a.fecha_inicio
+    guardias_borradas = Guardia.query.filter(
+        Guardia.profesor_ausente_id == a.profesor_id,
+        Guardia.fecha >= a.fecha_inicio,
+        Guardia.fecha <= fecha_fin
+    ).all()
+    for g in guardias_borradas:
+        db.session.delete(g)
+    db.session.delete(a)
+    db.session.commit()
+    msg = 'Ausencia eliminada.'
+    if guardias_borradas:
+        msg += f' También se eliminaron {len(guardias_borradas)} guardia(s) asociada(s).'
+    flash(msg, 'success')
+    return redirect(url_for('ausencias'))
 
 
 def _notificar_admin_ausencia_pendiente(ausencia):

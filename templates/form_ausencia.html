@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Reportar ausencia{% endblock %}
+{% block title %}{{ 'Editar' if ausencia else 'Reportar' }} ausencia{% endblock %}
 {% block content %}
 <div class="mb-4">
   <a href="{{ url_for('ausencias') }}" class="text-decoration-none text-muted">
@@ -10,30 +10,43 @@
   <div class="col-md-6">
     <div class="card">
       <div class="card-header bg-white">
-        <h5 class="mb-0"><i class="bi bi-person-x me-2 text-warning"></i>Reportar ausencia</h5>
+        <h5 class="mb-0">
+          <i class="bi bi-person-x me-2 text-warning"></i>
+          {{ 'Editar ausencia' if ausencia else 'Reportar ausencia' }}
+        </h5>
       </div>
       <div class="card-body">
 
-        {% if cfg.modo_guardias == 'automatico' %}
-        <div class="alert alert-success small">
-          <i class="bi bi-robot me-2"></i>
-          <strong>Modo automático:</strong> al guardar se asignará la guardia al instante y el sustituto recibirá un email.
-        </div>
+        {% if not ausencia %}
+          {% if cfg.modo_guardias == 'automatico' %}
+          <div class="alert alert-success small">
+            <i class="bi bi-robot me-2"></i>
+            <strong>Modo automático:</strong> al guardar se asignará la guardia al instante y el sustituto recibirá un email.
+          </div>
+          {% else %}
+          <div class="alert alert-info small">
+            <i class="bi bi-hourglass-split me-2"></i>
+            <strong>Modo manual:</strong> tu aviso llegará al administrador, que aprobará y asignará la guardia.
+          </div>
+          {% endif %}
         {% else %}
-        <div class="alert alert-info small">
-          <i class="bi bi-hourglass-split me-2"></i>
-          <strong>Modo manual:</strong> tu aviso llegará al administrador, que aprobará y asignará la guardia.
-        </div>
+          {% if ausencia.aprobada %}
+          <div class="alert alert-warning small">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            Esta ausencia ya está <strong>aprobada</strong> y puede tener guardias asignadas.
+            Editar los datos no modifica las guardias existentes.
+          </div>
+          {% endif %}
         {% endif %}
 
         <form method="POST">
           {% if current_user.es_admin and profesores %}
           <div class="mb-3">
             <label class="form-label">Profesor ausente <span class="text-danger">*</span></label>
-            <select name="profesor_id" class="form-select" required>
+            <select name="profesor_id" class="form-select" required {{ 'disabled' if ausencia }}>
               <option value="">Selecciona un profesor...</option>
               {% for p in profesores %}
-              <option value="{{ p.id }}">{{ p.nombre }}</option>
+              <option value="{{ p.id }}" {{ 'selected' if ausencia and ausencia.profesor_id == p.id }}>{{ p.nombre }}</option>
               {% endfor %}
             </select>
           </div>
@@ -41,20 +54,32 @@
 
           <div class="mb-3">
             <label class="form-label">Fecha <span class="text-danger">*</span></label>
-            <input type="date" name="fecha_inicio" class="form-control" id="fechaInput" required>
+            <input type="date" name="fecha_inicio" class="form-control" id="fechaInput" required
+              value="{{ ausencia.fecha_inicio.strftime('%Y-%m-%d') if ausencia else '' }}">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Fecha fin <span class="text-muted small">(si falta más de un día)</span></label>
+            <input type="date" name="fecha_fin" class="form-control"
+              value="{{ ausencia.fecha_fin.strftime('%Y-%m-%d') if ausencia and ausencia.fecha_fin else '' }}">
           </div>
 
           <div class="mb-3">
             <label class="form-label">¿Qué franjas no puedes cubrir? <span class="text-danger">*</span></label>
             <div class="border rounded p-3">
               <div class="form-check mb-2">
-                <input class="form-check-input" type="checkbox" id="todasFranjas" onchange="toggleTodas(this)">
+                <input class="form-check-input" type="checkbox" id="todasFranjas"
+                  {{ 'checked' if not ausencia or (ausencia and ausencia.franjas_afectadas == 'todas') }}
+                  onchange="toggleTodas(this)">
                 <label class="form-check-label fw-semibold" for="todasFranjas">Todo el día</label>
               </div>
               <hr class="my-2">
               {% for f in franjas %}
               <div class="form-check">
-                <input class="form-check-input franja-check" type="checkbox" name="franjas" value="{{ f }}" id="franja_{{ loop.index }}">
+                <input class="form-check-input franja-check" type="checkbox" name="franjas" value="{{ f }}"
+                  id="franja_{{ loop.index }}"
+                  {{ 'checked' if f in franjas_sel }}
+                  {{ 'disabled' if not ausencia or (ausencia and ausencia.franjas_afectadas == 'todas') else '' }}>
                 <label class="form-check-label" for="franja_{{ loop.index }}">{{ f }}</label>
               </div>
               {% endfor %}
@@ -65,9 +90,11 @@
           <div class="mb-3">
             <label class="form-label">Motivo <span class="text-danger">*</span></label>
             <input type="text" name="motivo" class="form-control"
-              placeholder="Enfermedad, asunto personal, formación..." required>
+              placeholder="Enfermedad, asunto personal, formación..."
+              value="{{ ausencia.motivo if ausencia else '' }}" required>
           </div>
 
+          {% if not ausencia %}
           <div class="mb-3">
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" name="es_baja" id="esBaja">
@@ -76,17 +103,19 @@
               </label>
             </div>
           </div>
+          {% endif %}
 
           <div class="mb-3">
             <label class="form-label">Notas adicionales</label>
             <textarea name="notas" class="form-control" rows="2"
-              placeholder="Tarea pendiente, instrucciones para el sustituto..."></textarea>
+              placeholder="Tarea pendiente, instrucciones para el sustituto...">{{ ausencia.notas if ausencia else '' }}</textarea>
           </div>
 
           <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
             <a href="{{ url_for('ausencias') }}" class="btn btn-secondary">Cancelar</a>
             <button type="submit" class="btn btn-warning">
-              <i class="bi bi-send me-1"></i>Reportar ausencia
+              <i class="bi bi-{{ 'save' if ausencia else 'send' }} me-1"></i>
+              {{ 'Guardar cambios' if ausencia else 'Reportar ausencia' }}
             </button>
           </div>
         </form>
@@ -97,13 +126,22 @@
 {% endblock %}
 {% block scripts %}
 <script>
+{% if not ausencia %}
 document.getElementById('fechaInput').value = new Date().toISOString().split('T')[0];
+{% endif %}
+
+const todasCb = document.getElementById('todasFranjas');
 
 function toggleTodas(cb) {
   document.querySelectorAll('.franja-check').forEach(f => {
     f.checked = false;
     f.disabled = cb.checked;
   });
+}
+
+// Inicializar estado al cargar
+if (todasCb && todasCb.checked) {
+  document.querySelectorAll('.franja-check').forEach(f => { f.disabled = true; });
 }
 </script>
 {% endblock %}
