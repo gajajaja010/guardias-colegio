@@ -1409,7 +1409,8 @@ def guardias():
             (Guardia.profesor_asignado_id == current_user.id) |
             (Guardia.profesor_ausente_id == current_user.id)
         ).order_by(Guardia.fecha.desc()).all()
-    return render_template('guardias.html', guardias=lista)
+    profesores_activos = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all() if current_user.es_admin else []
+    return render_template('guardias.html', guardias=lista, profesores_activos=profesores_activos)
 
 
 @app.route('/guardia/<int:id>/eliminar', methods=['POST'])
@@ -1421,6 +1422,26 @@ def eliminar_guardia(id):
     db.session.delete(g)
     db.session.commit()
     flash('Guardia eliminada.', 'success')
+    return redirect(url_for('guardias'))
+
+
+@app.route('/guardia/<int:id>/reasignar', methods=['POST'])
+@login_required
+def reasignar_guardia(id):
+    if not current_user.es_admin:
+        abort(403)
+    g = Guardia.query.get_or_404(id)
+    nuevo_id = request.form.get('profesor_id')
+    if not nuevo_id:
+        flash('Selecciona un profesor.', 'danger')
+        return redirect(url_for('guardias'))
+    g.profesor_asignado_id = int(nuevo_id)
+    g.estado = 'pendiente'
+    g.completada = False
+    db.session.commit()
+    enviar_email_guardia(g)
+    nuevo = Profesor.query.get(int(nuevo_id))
+    flash(f'Guardia reasignada a {nuevo.nombre}.', 'success')
     return redirect(url_for('guardias'))
 
 
