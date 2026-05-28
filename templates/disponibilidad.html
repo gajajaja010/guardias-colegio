@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block title %}Disponibilidad profesores{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="fw-bold mb-0"><i class="bi bi-grid-3x3-gap me-2 text-primary"></i>Disponibilidad semanal</h3>
+  <div class="d-flex gap-2 align-items-center">
+    <span class="badge bg-success px-2 py-1">Libre</span>
+    <span class="badge bg-danger px-2 py-1">Clase</span>
+    <span class="badge bg-warning text-dark px-2 py-1">No disponible</span>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3" id="tabDias">
+  {% for dia in dias %}
+  <li class="nav-item">
+    <button class="nav-link {% if loop.first %}active{% endif %}"
+      data-bs-toggle="tab" data-bs-target="#tab{{ dia }}">
+      {{ dia }}
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="tab-content">
+  {% for dia in dias %}
+  <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="tab{{ dia }}">
+    <div class="card">
+      <div class="card-body p-0 overflow-auto">
+        <table class="table table-bordered table-sm mb-0" style="min-width:600px">
+          <thead class="table-light">
+            <tr>
+              <th style="width:130px; white-space:nowrap">Franja</th>
+              {% for p in profesores %}
+              <th class="text-center small" style="min-width:90px; white-space:nowrap">{{ p.nombre.split()[0] }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for franja in franjas %}
+            {% set libres_count = namespace(n=0) %}
+            {% for p in profesores %}
+              {% if tabla[dia][franja][p.id][0] == 'libre' %}
+                {% set libres_count.n = libres_count.n + 1 %}
+              {% endif %}
+            {% endfor %}
+            <tr>
+              <td class="fw-semibold small align-middle">
+                {{ franja }}
+                <span class="badge bg-success ms-1" style="font-size:.65rem">{{ libres_count.n }} libres</span>
+              </td>
+              {% for p in profesores %}
+              {% set estado, motivo = tabla[dia][franja][p.id] %}
+              <td class="text-center p-1 align-middle"
+                style="background:{% if estado == 'clase' %}#f8d7da{% elif estado == 'ind' %}#fff3cd{% else %}#d1e7dd{% endif %}">
+                {% if estado == 'clase' %}
+                  <small class="text-danger" title="{{ motivo }}">📚</small>
+                {% elif estado == 'ind' %}
+                  <small class="text-warning" title="{{ motivo }}">⛔</small>
+                {% else %}
+                  <small class="text-success">✓</small>
+                {% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Resumen de libres por franja -->
+    <div class="mt-3">
+      <h6 class="text-muted fw-semibold">Profesores libres por franja — {{ dia }}</h6>
+      <div class="row g-2">
+        {% for franja in franjas %}
+        <div class="col-md-4 col-lg-3">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 px-3">
+              <div class="fw-semibold small text-muted mb-1">{{ franja }}</div>
+              {% set libres = [] %}
+              {% for p in profesores %}
+                {% if tabla[dia][franja][p.id][0] == 'libre' %}
+                  {% if libres.append(p.nombre) %}{% endif %}
+                {% endif %}
+              {% endfor %}
+              {% if libres %}
+                {% for nombre in libres %}
+                <span class="badge bg-success me-1 mb-1" style="font-size:.8rem">{{ nombre.split()[0] }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted small">Ninguno libre</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

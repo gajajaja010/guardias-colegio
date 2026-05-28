@@ -42,6 +42,9 @@
         <a class="nav-link {% if request.endpoint == 'mi_horario' %}active{% endif %}" href="{{ url_for('mi_horario') }}">
           <i class="bi bi-table"></i> Mi horario
         </a>
+        <a class="nav-link {% if request.endpoint == 'disponibilidad' %}active{% endif %}" href="{{ url_for('disponibilidad') }}">
+          <i class="bi bi-grid-3x3-gap"></i> Disponibilidad
+        </a>
         <a class="nav-link {% if request.endpoint == 'estadisticas' %}active{% endif %}" href="{{ url_for('estadisticas') }}">
           <i class="bi bi-bar-chart"></i> Estadísticas
         </a>

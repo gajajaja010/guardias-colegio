@@ -1707,6 +1707,37 @@ def descargar_plantilla():
 
 # ───────────────────────────── ESTADÍSTICAS ─────────────────────────────
 
+@app.route('/disponibilidad')
+@login_required
+def disponibilidad():
+    profesores = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
+
+    # Para cada (dia, franja, profesor) determinar estado: 'clase', 'ind', 'libre'
+    tabla = {}
+    for dia in DIAS_SEMANA:
+        tabla[dia] = {}
+        for franja in FRANJAS:
+            tabla[dia][franja] = {}
+            for p in profesores:
+                hp = HorarioProfesor.query.filter_by(
+                    profesor_id=p.id, dia=dia, franja=franja, tiene_clase=True
+                ).first()
+                if hp:
+                    tabla[dia][franja][p.id] = ('clase', hp.asignatura or 'Clase')
+                    continue
+                ind = Indisponibilidad.query.filter_by(
+                    profesor_id=p.id, dia=dia, franja=franja, activa=True, recurrente=True
+                ).first()
+                if ind:
+                    tabla[dia][franja][p.id] = ('ind', ind.motivo or 'No disponible')
+                    continue
+                tabla[dia][franja][p.id] = ('libre', '')
+
+    return render_template('disponibilidad.html',
+                           tabla=tabla, profesores=profesores,
+                           dias=DIAS_SEMANA, franjas=FRANJAS)
+
+
 @app.route('/estadisticas')
 @login_required
 def estadisticas():
