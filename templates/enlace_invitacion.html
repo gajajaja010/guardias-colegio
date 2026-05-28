@@ -13,6 +13,12 @@
         <h5 class="mb-0"><i class="bi bi-link-45deg me-2 text-primary"></i>Enlace de invitación</h5>
       </div>
       <div class="card-body">
+        {% if profesor.password_hash %}
+        <div class="alert alert-info small mb-3">
+          <i class="bi bi-info-circle me-2"></i><strong>{{ profesor.nombre }}</strong> ya tiene contraseña establecida.
+          Este enlace le permite <strong>cambiarla</strong> si la ha olvidado o quieres resetearla.
+        </div>
+        {% endif %}
         <p>Copia este enlace y mándalo manualmente a <strong>{{ profesor.nombre }}</strong> ({{ profesor.email }}):</p>
         <div class="input-group mb-3">
           <input type="text" class="form-control font-monospace small" id="enlaceInput" value="{{ enlace }}" readonly>

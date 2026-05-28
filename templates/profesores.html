@@ -169,6 +169,10 @@ function sincronizarHorarios() {
                 <i class="bi bi-envelope-arrow-up"></i>
               </button>
             </form>
+            {% else %}
+            <a href="{{ url_for('enlace_invitacion', id=p.id) }}" class="btn btn-sm btn-outline-info" title="Ver enlace (puede usarse para resetear contraseña)">
+              <i class="bi bi-link-45deg"></i>
+            </a>
             {% endif %}
             {% if not p.de_baja %}
             <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#modalBaja{{ p.id }}">
