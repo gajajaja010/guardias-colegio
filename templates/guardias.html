@@ -119,14 +119,11 @@
         </div>
         <div class="modal-body">
           <p class="small text-muted mb-2">Actualmente: <strong id="nombreActual">—</strong></p>
-          <label class="form-label small fw-semibold">Nuevo profesor</label>
-          <select name="profesor_id" class="form-select form-select-sm" required>
-            <option value="">Selecciona...</option>
-            {% for p in profesores_activos %}
-            <option value="{{ p.id }}">{{ p.nombre }}</option>
-            {% endfor %}
+          <label class="form-label small fw-semibold">Profesor disponible</label>
+          <select name="profesor_id" class="form-select form-select-sm" id="selectDisponibles" required>
+            <option value="">Cargando...</option>
           </select>
-          <div class="form-text">Se enviará email al nuevo profesor asignado.</div>
+          <div class="form-text">Solo aparecen profesores libres en esa franja. Se enviará email al asignado.</div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
@@ -142,6 +139,19 @@
 function abrirReasignar(guardiaId, nombreActual) {
   document.getElementById('formReasignar').action = '/guardia/' + guardiaId + '/reasignar';
   document.getElementById('nombreActual').textContent = nombreActual || 'Sin asignar';
+  const sel = document.getElementById('selectDisponibles');
+  sel.innerHTML = '<option value="">Cargando...</option>';
+  fetch('/guardia/' + guardiaId + '/disponibles')
+    .then(r => r.json())
+    .then(data => {
+      if (data.length === 0) {
+        sel.innerHTML = '<option value="">Ningún profesor disponible</option>';
+      } else {
+        sel.innerHTML = '<option value="">Selecciona...</option>' +
+          data.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+      }
+    })
+    .catch(() => { sel.innerHTML = '<option value="">Error al cargar</option>'; });
   new bootstrap.Modal(document.getElementById('modalReasignar')).show();
 }
 </script>

@@ -1425,6 +1425,21 @@ def eliminar_guardia(id):
     return redirect(url_for('guardias'))
 
 
+@app.route('/guardia/<int:id>/disponibles')
+@login_required
+def guardia_disponibles(id):
+    if not current_user.es_admin:
+        abort(403)
+    g = Guardia.query.get_or_404(id)
+    profesores = Profesor.query.filter_by(activo=True, de_baja=False).order_by(Profesor.nombre).all()
+    disponibles = [
+        {'id': p.id, 'nombre': p.nombre}
+        for p in profesores
+        if p.id != g.profesor_ausente_id and p.esta_libre_en(g.dia_semana, g.franja, fecha=g.fecha)
+    ]
+    return jsonify(disponibles)
+
+
 @app.route('/guardia/<int:id>/reasignar', methods=['POST'])
 @login_required
 def reasignar_guardia(id):
